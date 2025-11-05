@@ -7,17 +7,17 @@ import { api } from '@/lib/api';
 
 export default function HomeScreen() {
   const { user, isLoaded: userLoaded } = useUser();
-  const { isSignedIn, isLoaded: authLoaded } = useAuth();
+  const { isSignedIn, isLoaded: authLoaded, getToken } = useAuth();
   const router = useRouter();
   const [userName, setUserName] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchUserData = async () => {
-      if (!user || !isSignedIn) return;
+      if (!user || !isSignedIn || !getToken) return;
 
       try {
-        const token = await user.getToken();
+        const token = await getToken();
         if (!token) return;
 
         // Get user profile to get name

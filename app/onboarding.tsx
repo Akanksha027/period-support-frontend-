@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useUser } from '@clerk/clerk-expo';
+import { useUser, useAuth } from '@clerk/clerk-expo';
 import { api } from '@/lib/api';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -20,6 +20,7 @@ type Step = 'birthDate' | 'lastPeriod' | 'periodDuration' | 'cycleLength' | 'com
 export default function OnboardingScreen() {
   const router = useRouter();
   const { user } = useUser();
+  const { getToken } = useAuth();
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<Step>('birthDate');
 
@@ -84,7 +85,7 @@ export default function OnboardingScreen() {
       const cycleLen = rememberCycleLength === false ? 28 : (averageCycleLength ? parseInt(averageCycleLength) : 28);
 
       // Get token first
-      const token = await user.getToken();
+      const token = await getToken();
       if (!token) {
         Alert.alert('Error', 'Authentication failed. Please try again.');
         return;

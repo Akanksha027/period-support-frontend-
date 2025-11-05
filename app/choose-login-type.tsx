@@ -6,7 +6,7 @@ import { useUser, useAuth } from '@clerk/clerk-expo';
 export default function ChooseLoginTypeScreen() {
   const router = useRouter();
   const { user, isLoaded: userLoaded } = useUser();
-  const { isSignedIn, isLoaded: authLoaded } = useAuth();
+  const { isSignedIn, isLoaded: authLoaded, getToken } = useAuth();
 
   // Show loading while checking auth state
   if (!authLoaded || !userLoaded) {
@@ -26,7 +26,11 @@ export default function ChooseLoginTypeScreen() {
     // Check if user has completed onboarding
     // If not, redirect to onboarding screen
     try {
-      const token = await user?.getToken();
+      if (!getToken) {
+        router.replace('/home');
+        return;
+      }
+      const token = await getToken();
       if (!token) {
         router.replace('/home');
         return;
