@@ -33,8 +33,10 @@ export default function RootLayout() {
         <Stack.Screen name="auth" />
         <Stack.Screen name="choose-login-type" />
         <Stack.Screen name="login-for-other" />
+        <Stack.Screen name="onboarding" />
         <Stack.Screen name="home" />
         <Stack.Screen name="home-for-other" />
+        <Stack.Screen name="(tabs)" />
       </Stack>
       <StatusBar style="auto" />
     </ClerkProvider>

@@ -27,12 +27,12 @@ export default function ChooseLoginTypeScreen() {
     // If not, redirect to onboarding screen
     try {
       if (!getToken) {
-        router.replace('/home');
+        router.replace('/(tabs)/home');
         return;
       }
       const token = await getToken();
       if (!token) {
-        router.replace('/home');
+        router.replace('/(tabs)/home');
         return;
       }
 
@@ -51,7 +51,7 @@ export default function ChooseLoginTypeScreen() {
         const hasCompletedOnboarding = data.settings?.birthYear || data.settings?.lastPeriodDate;
         
         if (hasCompletedOnboarding) {
-          router.replace('/home');
+          router.replace('/(tabs)/home');
         } else {
           router.replace('/onboarding');
         }

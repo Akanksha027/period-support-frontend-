@@ -110,8 +110,8 @@ export default function OnboardingScreen() {
       );
 
       if (response.data.success) {
-        // Navigate to home
-        router.replace('/home');
+        // Navigate to tabs home
+        router.replace('/(tabs)/home');
       } else {
         Alert.alert('Error', 'Failed to save settings. Please try again.');
       }
