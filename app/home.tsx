@@ -21,11 +21,14 @@ export default function HomeScreen() {
         if (!token) return;
 
         // Get user profile to get name
-        // Note: GET requests don't have body, so we'll send email/clerkId in query params
-        // The backend will decode from token if available
+        // The backend will decode from token, but we can also send email as query param as fallback
         const response = await api.get('/api/user', {
           headers: {
             Authorization: `Bearer ${token}`,
+          },
+          params: {
+            email: user.emailAddresses[0]?.emailAddress,
+            clerkId: user.id,
           },
         });
 
