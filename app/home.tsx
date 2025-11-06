@@ -14,11 +14,28 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const fetchUserData = async () => {
-      if (!user || !isSignedIn) return;
+      // Wait for auth to be loaded
+      if (!authLoaded || !userLoaded) {
+        return;
+      }
+
+      // If not signed in, stop loading
+      if (!isSignedIn) {
+        setLoading(false);
+        return;
+      }
+
+      // If user is not available yet, wait
+      if (!user) {
+        return;
+      }
 
       try {
         const token = await getToken();
-        if (!token) return;
+        if (!token) {
+          setLoading(false);
+          return;
+        }
 
         // Get user profile to get name
         // Include clerkId and email for backend fallback authentication
@@ -50,10 +67,8 @@ export default function HomeScreen() {
       }
     };
 
-    if (userLoaded && user) {
-      fetchUserData();
-    }
-  }, [user, userLoaded, isSignedIn]);
+    fetchUserData();
+  }, [user, userLoaded, authLoaded, isSignedIn, getToken]);
 
   // Show loading while checking auth state
   if (!authLoaded || !userLoaded || loading) {

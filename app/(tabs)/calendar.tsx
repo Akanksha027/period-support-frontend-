@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,36 +9,104 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Colors } from '../../constants/Colors';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth, useUser } from '@clerk/clerk-expo';
 import {
   getPeriods,
   getSettings,
   createPeriod,
-  updatePeriod,
   deletePeriod,
+  getSymptoms,
   Period,
   UserSettings,
+  Symptom,
 } from '../../lib/api';
-import { calculatePredictions, getDayInfo, CyclePredictions } from '../../lib/periodCalculations';
+import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+// Helper function to get phase info for any date
+function getPhaseInfoForDate(
+  date: Date,
+  periods: Period[],
+  predictions: CyclePredictions,
+  settings: UserSettings | null
+): { phaseName: string; phaseDay: number } {
+  const dayInfo = getDayInfo(date, periods, predictions);
+  const sortedPeriods = [...periods].sort(
+    (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+  );
+
+  let phaseName = 'Cycle';
+  let phaseDay = 1;
+
+  if (sortedPeriods.length > 0) {
+    const lastPeriodStart = new Date(sortedPeriods[0].startDate);
+    lastPeriodStart.setHours(0, 0, 0, 0);
+    const lastPeriodEnd = sortedPeriods[0].endDate
+      ? new Date(sortedPeriods[0].endDate)
+      : new Date(lastPeriodStart.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000);
+    lastPeriodEnd.setHours(0, 0, 0, 0);
+
+    const periodInfo = getPeriodDayInfo(date, periods);
+    if (dayInfo.isPeriod && periodInfo) {
+      phaseName = 'Period';
+      phaseDay = periodInfo.dayNumber;
+    } else if (dayInfo.isFertile && predictions.fertileWindowStart) {
+      phaseName = 'Ovulation';
+      const fertileStart = new Date(predictions.fertileWindowStart);
+      fertileStart.setHours(0, 0, 0, 0);
+      const daysSinceFertileStart = Math.floor((date.getTime() - fertileStart.getTime()) / (1000 * 60 * 60 * 24));
+      phaseDay = Math.max(1, daysSinceFertileStart + 1);
+    } else if (dayInfo.isPMS && predictions.ovulationDate) {
+      phaseName = 'Luteal';
+      const ovulationDate = new Date(predictions.ovulationDate);
+      ovulationDate.setHours(0, 0, 0, 0);
+      const daysSinceOvulation = Math.floor((date.getTime() - ovulationDate.getTime()) / (1000 * 60 * 60 * 24));
+      phaseDay = Math.max(1, daysSinceOvulation + 1);
+    } else {
+      phaseName = 'Follicular';
+      const daysSincePeriodEnd = Math.floor((date.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24));
+      phaseDay = Math.max(1, daysSincePeriodEnd + 1);
+    }
+  }
+
+  return { phaseName, phaseDay };
+}
+
 export default function CalendarScreen() {
-  const { user, isSignedIn, getToken } = useAuth();
+  const { isSignedIn, getToken } = useAuth();
+  const { user } = useUser();
   const [loading, setLoading] = useState(true);
   const [periods, setPeriods] = useState<Period[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedDateSymptoms, setSelectedDateSymptoms] = useState<Symptom[]>([]);
+  const [loadingSymptoms, setLoadingSymptoms] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newPeriodDate, setNewPeriodDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  // Use refs to avoid infinite loops
+  const userRef = useRef(user);
+  const isSignedInRef = useRef(isSignedIn);
+  const getTokenRef = useRef(getToken);
+  const loadingDataRef = useRef(false);
+
+  // Update refs when values change
+  useEffect(() => {
+    userRef.current = user;
+    isSignedInRef.current = isSignedIn;
+    getTokenRef.current = getToken;
+  }, [user, isSignedIn, getToken]);
 
   // Set up token getter
   useEffect(() => {
@@ -52,11 +120,16 @@ export default function CalendarScreen() {
   }, [periods, settings]);
 
   const loadData = useCallback(async () => {
-    if (!user || !isSignedIn) {
+    if (loadingDataRef.current) {
+      return;
+    }
+
+    if (!userRef.current || !isSignedInRef.current) {
       setLoading(false);
       return;
     }
 
+    loadingDataRef.current = true;
     setLoading(true);
     try {
       const [periodsData, settingsData] = await Promise.all([
@@ -71,21 +144,52 @@ export default function CalendarScreen() {
       }
     } finally {
       setLoading(false);
+      loadingDataRef.current = false;
     }
-  }, [user, isSignedIn]);
+  }, []);
+
+  // Load symptoms for selected date
+  const loadSymptomsForDate = useCallback(async (date: Date) => {
+    if (!user) return;
+    
+    setLoadingSymptoms(true);
+    try {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const symptoms = await getSymptoms(
+        startOfDay.toISOString(),
+        endOfDay.toISOString()
+      );
+      setSelectedDateSymptoms(symptoms);
+    } catch (error: any) {
+      console.error('[Calendar] Error loading symptoms:', error);
+      setSelectedDateSymptoms([]);
+    } finally {
+      setLoadingSymptoms(false);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (user && isSignedIn) {
-      loadData();
+      const timer = setTimeout(() => {
+        loadData();
+      }, 100);
+      return () => clearTimeout(timer);
+    } else {
+      setLoading(false);
     }
-  }, [user, isSignedIn, loadData]);
+  }, [user?.id, isSignedIn]);
 
   useFocusEffect(
     useCallback(() => {
       if (user && isSignedIn) {
+        loadingDataRef.current = false;
         loadData();
       }
-    }, [user, isSignedIn, loadData])
+    }, [user?.id, isSignedIn, loadData])
   );
 
   const getDaysInMonth = useCallback((date: Date) => {
@@ -114,52 +218,84 @@ export default function CalendarScreen() {
       const isPeriodDay = periods.some((period) => {
         const start = new Date(period.startDate);
         start.setHours(0, 0, 0, 0);
-        const end = period.endDate ? new Date(period.endDate) : start;
-        end.setHours(0, 0, 0, 0);
+        const end = period.endDate
+          ? new Date(period.endDate)
+          : new Date(start.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000 - 1);
+        end.setHours(23, 59, 59, 999);
         return date >= start && date <= end;
       });
 
       if (isPeriodDay) {
-        return { type: 'period', color: Colors.primary };
+        return { type: 'period', color: '#FF6B9D' }; // Red
       }
 
-      if (dayInfo.phase === 'fertile') {
-        return { type: 'fertile', color: '#4A90E2' };
+      // Check if it's ovulation day first (most specific)
+      if (predictions.ovulationDate && dayInfo.isFertile) {
+        const dateTime = date.getTime();
+        const ovDate = new Date(predictions.ovulationDate);
+        ovDate.setHours(0, 0, 0, 0);
+        const ovTime = ovDate.getTime();
+        // Check if this date matches the ovulation date exactly
+        if (Math.abs(dateTime - ovTime) < 24 * 60 * 60 * 1000) {
+          return { type: 'ovulation', color: '#4A90E2' }; // Blue
+        }
       }
 
-      if (dayInfo.phase === 'pms') {
-        return { type: 'pms', color: '#66BB6A' };
+      // Check if it's in the fertility window (but not ovulation day)
+      if (dayInfo.phase === 'fertile' || dayInfo.isFertile) {
+        return { type: 'fertile', color: '#FFD93D' }; // Yellow
       }
 
       if (dayInfo.phase === 'predicted_period') {
-        return { type: 'predicted', color: Colors.secondary };
+        return { type: 'predicted', color: '#66BB6A' }; // Green
       }
 
       return { type: 'normal', color: Colors.border };
     },
-    [periods, predictions]
+    [periods, predictions, settings]
   );
 
-  const handleAddPeriod = useCallback(async () => {
+  const handleDatePress = useCallback((date: Date) => {
+    setSelectedDate(date);
+    loadSymptomsForDate(date);
+  }, [loadSymptomsForDate]);
+
+  const handleAddPeriod = useCallback(async (selectedDate?: Date) => {
     if (!user) return;
 
     try {
-      const date = new Date(newPeriodDate);
+      const date = selectedDate || new Date(newPeriodDate);
       date.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Prevent logging periods for future dates
+      if (date > today) {
+        Alert.alert('Invalid Date', 'Cannot log periods for future dates.');
+        return;
+      }
+
+      // Calculate end date based on average period length
+      const periodLength = settings?.averagePeriodLength || 5;
+      const endDate = new Date(date);
+      endDate.setDate(endDate.getDate() + periodLength - 1);
+      endDate.setHours(23, 59, 59, 999);
 
       await createPeriod({
         startDate: date.toISOString(),
-        endDate: null,
-        flowLevel: null,
+        endDate: endDate.toISOString(),
+        flowLevel: 'medium',
       });
 
       Alert.alert('Success', 'Period logged successfully');
       setShowDatePicker(false);
+      setSelectedDate(null);
+      loadingDataRef.current = false;
       loadData();
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to log period');
     }
-  }, [user, newPeriodDate, loadData]);
+  }, [user, newPeriodDate, settings, loadData]);
 
   const handleDeletePeriod = useCallback(
     async (periodId: string) => {
@@ -172,6 +308,8 @@ export default function CalendarScreen() {
             try {
               await deletePeriod(periodId);
               Alert.alert('Success', 'Period deleted successfully');
+              setSelectedDate(null);
+              loadingDataRef.current = false;
               loadData();
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to delete period');
@@ -200,6 +338,46 @@ export default function CalendarScreen() {
   }, []);
 
   const days = useMemo(() => getDaysInMonth(currentMonth), [currentMonth, getDaysInMonth]);
+
+  // Get period for selected date
+  const selectedDatePeriod = useMemo(() => {
+    if (!selectedDate) return null;
+    return periods.find((p) => {
+      const start = new Date(p.startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = p.endDate
+        ? new Date(p.endDate)
+        : new Date(start.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000 - 1);
+      end.setHours(23, 59, 59, 999);
+      return selectedDate >= start && selectedDate <= end;
+    });
+  }, [selectedDate, periods, settings]);
+
+  // Check if selected date is the first day of a period
+  const isFirstDayOfPeriod = useMemo(() => {
+    if (!selectedDate || !selectedDatePeriod) return false;
+    const periodStart = new Date(selectedDatePeriod.startDate);
+    periodStart.setHours(0, 0, 0, 0);
+    const selected = new Date(selectedDate);
+    selected.setHours(0, 0, 0, 0);
+    return periodStart.getTime() === selected.getTime();
+  }, [selectedDate, selectedDatePeriod]);
+
+  // Get phase info for selected date
+  const selectedDatePhaseInfo = useMemo(() => {
+    if (!selectedDate) return null;
+    return getPhaseInfoForDate(selectedDate, periods, predictions, settings);
+  }, [selectedDate, periods, predictions, settings]);
+
+  // Check if selected date is in the past and has no period
+  const canLogPeriod = useMemo(() => {
+    if (!selectedDate) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selected = new Date(selectedDate);
+    selected.setHours(0, 0, 0, 0);
+    return selected <= today && !selectedDatePeriod;
+  }, [selectedDate, selectedDatePeriod]);
 
   if (loading) {
     return (
@@ -241,15 +419,7 @@ export default function CalendarScreen() {
             }
 
             const status = getDayStatus(date);
-            const isToday =
-              date.toDateString() === new Date().toDateString();
-            const period = periods.find((p) => {
-              const start = new Date(p.startDate);
-              start.setHours(0, 0, 0, 0);
-              const end = p.endDate ? new Date(p.endDate) : start;
-              end.setHours(0, 0, 0, 0);
-              return date >= start && date <= end;
-            });
+            const isToday = date.toDateString() === new Date().toDateString();
 
             return (
               <TouchableOpacity
@@ -259,26 +429,21 @@ export default function CalendarScreen() {
                   isToday && styles.todayCell,
                   status.type === 'period' && styles.periodCell,
                   status.type === 'fertile' && styles.fertileCell,
+                  status.type === 'ovulation' && styles.ovulationCell,
                   status.type === 'predicted' && styles.predictedCell,
                 ]}
-                onPress={() => {
-                  if (period) {
-                    setSelectedDate(date);
-                  }
-                }}
+                onPress={() => handleDatePress(date)}
               >
                 <Text
                   style={[
                     styles.dayText,
                     isToday && styles.todayText,
                     status.type === 'period' && styles.periodText,
+                    (status.type === 'fertile' || status.type === 'ovulation' || status.type === 'predicted') && styles.coloredText,
                   ]}
                 >
                   {date.getDate()}
                 </Text>
-                {status.type === 'period' && (
-                  <View style={styles.periodIndicator} />
-                )}
               </TouchableOpacity>
             );
           })}
@@ -287,30 +452,133 @@ export default function CalendarScreen() {
         {/* Legend */}
         <View style={styles.legend}>
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: Colors.primary }]} />
+            <View style={[styles.legendColor, { backgroundColor: '#FF6B9D' }]} />
             <Text style={styles.legendText}>Period</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#4A90E2' }]} />
-            <Text style={styles.legendText}>Fertile</Text>
+            <View style={[styles.legendColor, { backgroundColor: '#FFD93D' }]} />
+            <Text style={styles.legendText}>Fertility</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: Colors.secondary }]} />
+            <View style={[styles.legendColor, { backgroundColor: '#4A90E2' }]} />
+            <Text style={styles.legendText}>Ovulation</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendColor, { backgroundColor: '#66BB6A' }]} />
             <Text style={styles.legendText}>Predicted</Text>
           </View>
         </View>
-
-        {/* Add Period Button */}
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Ionicons name="add" size={24} color={Colors.white} />
-          <Text style={styles.addButtonText}>Log Period</Text>
-        </TouchableOpacity>
       </ScrollView>
 
-      {/* Date Picker Modal */}
+      {/* Date Detail Bottom Sheet Modal */}
+      <Modal
+        visible={!!selectedDate}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedDate(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setSelectedDate(null)}
+          />
+          <View style={styles.bottomSheet}>
+            <View style={styles.bottomSheetHandle} />
+            <ScrollView style={styles.bottomSheetContent} showsVerticalScrollIndicator={false}>
+              {/* Date Header */}
+              <Text style={styles.bottomSheetTitle}>
+                {selectedDate?.toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </Text>
+
+              {/* Phase Information */}
+              {selectedDatePhaseInfo && (
+                <View style={styles.phaseInfoContainer}>
+                  <Text style={styles.phaseInfoText}>
+                    {selectedDatePhaseInfo.phaseName} Phase - Day {selectedDatePhaseInfo.phaseDay}
+                  </Text>
+                </View>
+              )}
+
+              {/* Period Information */}
+              {selectedDatePeriod && (
+                <View style={styles.periodInfoContainer}>
+                  <Text style={styles.periodInfoTitle}>Period Information</Text>
+                  <Text style={styles.periodInfoText}>
+                    Start: {new Date(selectedDatePeriod.startDate).toLocaleDateString()}
+                  </Text>
+                  {selectedDatePeriod.endDate && (
+                    <Text style={styles.periodInfoText}>
+                      End: {new Date(selectedDatePeriod.endDate).toLocaleDateString()}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Symptoms */}
+              <View style={styles.symptomsContainer}>
+                <Text style={styles.symptomsTitle}>Symptoms</Text>
+                {loadingSymptoms ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : selectedDateSymptoms.length > 0 ? (
+                  selectedDateSymptoms.map((symptom) => (
+                    <View key={symptom.id} style={styles.symptomItem}>
+                      <Text style={styles.symptomText}>
+                        {symptom.type} {symptom.severity ? `(Severity: ${symptom.severity}/5)` : ''}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.noSymptomsText}>No symptoms logged for this date</Text>
+                )}
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.actionButtonsContainer}>
+                {isFirstDayOfPeriod && selectedDatePeriod && (
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => {
+                      handleDeletePeriod(selectedDatePeriod.id);
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={Colors.white} />
+                    <Text style={styles.deleteButtonText}>Delete Period</Text>
+                  </TouchableOpacity>
+                )}
+
+                {canLogPeriod && (
+                  <TouchableOpacity
+                    style={styles.logPeriodButton}
+                    onPress={() => {
+                      setNewPeriodDate(selectedDate!);
+                      handleAddPeriod(selectedDate!);
+                    }}
+                  >
+                    <Ionicons name="add-circle-outline" size={20} color={Colors.white} />
+                    <Text style={styles.logPeriodButtonText}>Log Period</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Close Button */}
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setSelectedDate(null)}
+              >
+                <Text style={styles.closeButtonText}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Date Picker Modal (for manual period logging) */}
       <Modal
         visible={showDatePicker}
         transparent
@@ -324,11 +592,18 @@ export default function CalendarScreen() {
               value={newPeriodDate}
               mode="date"
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              maximumDate={new Date()}
               onChange={(event, date) => {
                 if (Platform.OS === 'android') {
                   setShowDatePicker(false);
                 }
                 if (date) {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  if (date > today) {
+                    Alert.alert('Invalid Date', 'Cannot log periods for future dates.');
+                    return;
+                  }
                   setNewPeriodDate(date);
                 }
               }}
@@ -342,7 +617,7 @@ export default function CalendarScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.confirmButton]}
-                onPress={handleAddPeriod}
+                onPress={() => handleAddPeriod()}
               >
                 <Text style={styles.confirmButtonText}>Add</Text>
               </TouchableOpacity>
@@ -350,59 +625,6 @@ export default function CalendarScreen() {
           </View>
         </View>
       </Modal>
-
-      {/* Period Detail Modal */}
-      {selectedDate && (
-        <Modal
-          visible={!!selectedDate}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setSelectedDate(null)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                Period: {selectedDate?.toLocaleDateString()}
-              </Text>
-              {periods
-                .filter((p) => {
-                  const start = new Date(p.startDate);
-                  start.setHours(0, 0, 0, 0);
-                  const end = p.endDate ? new Date(p.endDate) : start;
-                  end.setHours(0, 0, 0, 0);
-                  return selectedDate && selectedDate >= start && selectedDate <= end;
-                })
-                .map((period) => (
-                  <View key={period.id} style={styles.periodDetail}>
-                    <Text style={styles.periodDetailText}>
-                      Start: {new Date(period.startDate).toLocaleDateString()}
-                    </Text>
-                    {period.endDate && (
-                      <Text style={styles.periodDetailText}>
-                        End: {new Date(period.endDate).toLocaleDateString()}
-                      </Text>
-                    )}
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={() => {
-                        handleDeletePeriod(period.id);
-                        setSelectedDate(null);
-                      }}
-                    >
-                      <Text style={styles.deleteButtonText}>Delete Period</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setSelectedDate(null)}
-              >
-                <Text style={styles.closeButtonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
     </SafeAreaView>
   );
 }
@@ -464,18 +686,20 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   todayCell: {
-    backgroundColor: Colors.surface,
     borderColor: Colors.primary,
     borderWidth: 2,
   },
   periodCell: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: '#FF6B9D', // Red
   },
   fertileCell: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#FFD93D', // Yellow
+  },
+  ovulationCell: {
+    backgroundColor: '#4A90E2', // Blue
   },
   predictedCell: {
-    backgroundColor: '#FFE5ED',
+    backgroundColor: '#66BB6A', // Green
   },
   dayText: {
     fontSize: 14,
@@ -489,19 +713,16 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: '600',
   },
-  periodIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.primary,
+  coloredText: {
+    color: Colors.text,
+    fontWeight: '600',
   },
   legend: {
     flexDirection: 'row',
     justifyContent: 'center',
     padding: 20,
     gap: 20,
+    flexWrap: 'wrap',
   },
   legendItem: {
     flexDirection: 'row',
@@ -517,26 +738,141 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
   },
-  addButton: {
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalBackdrop: {
+    flex: 1,
+  },
+  bottomSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: SCREEN_HEIGHT * 0.7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  bottomSheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  bottomSheetContent: {
+    padding: 20,
+  },
+  bottomSheetTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 16,
+  },
+  phaseInfoContainer: {
+    backgroundColor: Colors.surface,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  phaseInfoText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  periodInfoContainer: {
+    backgroundColor: '#FFE5ED',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  periodInfoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  periodInfoText: {
+    fontSize: 14,
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  symptomsContainer: {
+    marginBottom: 16,
+  },
+  symptomsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  symptomItem: {
+    backgroundColor: Colors.surface,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  symptomText: {
+    fontSize: 14,
+    color: Colors.text,
+  },
+  noSymptomsText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  actionButtonsContainer: {
+    gap: 12,
+    marginBottom: 16,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF3B30',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  deleteButtonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  logPeriodButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.primary,
     padding: 16,
-    margin: 20,
-    borderRadius: 24,
+    borderRadius: 12,
     gap: 8,
   },
-  addButtonText: {
+  logPeriodButtonText: {
     color: Colors.white,
     fontSize: 16,
     fontWeight: '600',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+  closeButton: {
+    backgroundColor: Colors.surface,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
+    marginTop: 8,
+  },
+  closeButtonText: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '600',
   },
   modalContent: {
     backgroundColor: Colors.white,
@@ -544,6 +880,9 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '90%',
     maxWidth: 400,
+    alignSelf: 'center',
+    marginTop: 'auto',
+    marginBottom: 'auto',
   },
   modalTitle: {
     fontSize: 20,
@@ -576,37 +915,4 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: '600',
   },
-  periodDetail: {
-    padding: 16,
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  periodDetailText: {
-    fontSize: 14,
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  deleteButton: {
-    backgroundColor: Colors.error,
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 8,
-    alignItems: 'center',
-  },
-  deleteButtonText: {
-    color: Colors.white,
-    fontWeight: '600',
-  },
-  closeButton: {
-    backgroundColor: Colors.surface,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    color: Colors.text,
-    fontWeight: '600',
-  },
 });
-

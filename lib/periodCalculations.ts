@@ -106,36 +106,36 @@ export function calculatePredictions(
       ? Math.round(totalPeriodDays / periodCount)
       : settings?.averagePeriodLength || 5;
 
-  // Predict next period - calculate from END of last period
-  let lastPeriodEnd = new Date(lastPeriodStart);
-  if (lastPeriod.endDate) {
-    lastPeriodEnd = new Date(lastPeriod.endDate);
-    lastPeriodEnd.setHours(0, 0, 0, 0);
-  } else {
-    lastPeriodEnd.setDate(lastPeriodEnd.getDate() + (avgPeriodLength || 5));
-  }
-  
-  let nextPeriodDate = new Date(lastPeriodEnd);
+  // Predict next period - calculate from START of last period
+  // Cycle length is measured from the start of one period to the start of the next period
+  let nextPeriodDate = new Date(lastPeriodStart);
   nextPeriodDate.setDate(nextPeriodDate.getDate() + finalCycleLength);
   nextPeriodDate.setHours(0, 0, 0, 0);
   
+  // If the predicted next period date is in the past, calculate the next future period
   const todayCheck = new Date();
   todayCheck.setHours(0, 0, 0, 0);
-  if (nextPeriodDate.getTime() < todayCheck.getTime()) {
-    const daysSinceLastPeriod = Math.floor((todayCheck.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (nextPeriodDate.getTime() <= todayCheck.getTime()) {
+    // Calculate how many full cycles have passed since the last period start
+    const daysSinceLastPeriodStart = Math.floor((todayCheck.getTime() - lastPeriodStart.getTime()) / (1000 * 60 * 60 * 24));
     const cyclesSinceLastPeriod = Math.floor(daysSinceLastPeriod / finalCycleLength);
-    const nextCycleStart = new Date(lastPeriodEnd);
+    
+    // Calculate the next period start date
+    const nextCycleStart = new Date(lastPeriodStart);
     nextCycleStart.setDate(nextCycleStart.getDate() + (cyclesSinceLastPeriod + 1) * finalCycleLength);
     nextPeriodDate = nextCycleStart;
     nextPeriodDate.setHours(0, 0, 0, 0);
   }
 
-  // Calculate ovulation
+  // Calculate ovulation - typically occurs 14 days before the next period
+  // This gives us the ovulation date for the current cycle
   const ovulationDate = new Date(nextPeriodDate);
   ovulationDate.setDate(ovulationDate.getDate() - 14);
   ovulationDate.setHours(0, 0, 0, 0);
 
-  // Fertile window
+  // Fertile window - typically 5 days before ovulation through ovulation day
+  // This is when conception is most likely
   const fertileWindowStart = new Date(ovulationDate);
   fertileWindowStart.setDate(fertileWindowStart.getDate() - 5);
   fertileWindowStart.setHours(0, 0, 0, 0);

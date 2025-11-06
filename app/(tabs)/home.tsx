@@ -8,38 +8,33 @@ import {
   Dimensions,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Svg, { Circle, G, Text as SvgText, Path } from 'react-native-svg';
-import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, G, Text as SvgText, Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { Colors } from '../../constants/Colors';
-import { useAuth } from '@clerk/clerk-expo';
-import { getPeriods, getSettings, getSymptoms, createPeriod, Period, UserSettings, Symptom } from '../../lib/api';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { getPeriods, getSettings, getSymptoms, getMoods, createPeriod, Period, UserSettings, Symptom, Mood } from '../../lib/api';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
-const CIRCLE_RADIUS = width * 0.35;
-const CENTER_X = width / 2;
-const CENTER_Y = CIRCLE_RADIUS + 60;
-
-interface DateInfo {
-  day: number;
-  date: Date;
-  phase: 'period' | 'fertile' | 'pms' | 'predicted_period' | 'normal';
-}
+const CIRCLE_RADIUS = 155;
+const SVG_SIZE = 400;
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, isSignedIn, getToken } = useAuth();
+  const { user } = useUser();
+  const { isSignedIn, getToken } = useAuth();
   const { phaseColors } = usePhase();
   const [loading, setLoading] = useState(true);
   const [periods, setPeriods] = useState<Period[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [todaySymptoms, setTodaySymptoms] = useState<Symptom[]>([]);
+  const [todayMoods, setTodayMoods] = useState<Mood[]>([]);
   const [userName, setUserName] = useState<string>('');
   const loadingRef = useRef(false);
 
@@ -84,34 +79,66 @@ export default function HomeScreen() {
     );
     
     let cycleDay = 1;
-    let phaseName = 'Normal';
+    let phaseName = 'Cycle';
+    let phaseDay = 1; // Day within the current phase
     let phaseEmoji = '😊';
     
     if (sortedPeriods.length > 0) {
       const lastPeriodStart = new Date(sortedPeriods[0].startDate);
       lastPeriodStart.setHours(0, 0, 0, 0);
+      const lastPeriodEnd = sortedPeriods[0].endDate 
+        ? new Date(sortedPeriods[0].endDate)
+        : new Date(lastPeriodStart.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000);
+      lastPeriodEnd.setHours(0, 0, 0, 0);
+      
       const daysSinceLastPeriod = Math.floor(
         (today.getTime() - lastPeriodStart.getTime()) / (1000 * 60 * 60 * 24)
       );
       cycleDay = daysSinceLastPeriod + 1;
-    }
-    
-    if (dayInfo.isPeriod) {
-      phaseName = 'Period Phase';
-      phaseEmoji = '🩸';
-    } else if (dayInfo.isFertile) {
-      phaseName = 'Ovulation Phase';
-      phaseEmoji = '💕';
-    } else if (dayInfo.isPMS) {
-      phaseName = 'Luteal Phase';
-      phaseEmoji = '😌';
+      
+      // Calculate phase day based on current phase
+      if (dayInfo.isPeriod && currentPeriodInfo) {
+        // On period - phase day is the day number within the period
+        phaseName = 'Period';
+        phaseDay = currentPeriodInfo.dayNumber || 1;
+        phaseEmoji = '🩸';
+      } else if (dayInfo.isFertile && predictions.fertileWindowStart) {
+        // In fertile/ovulation phase
+        phaseName = 'Ovulation';
+        phaseEmoji = '💕';
+        const fertileStart = new Date(predictions.fertileWindowStart);
+        fertileStart.setHours(0, 0, 0, 0);
+        const daysSinceFertileStart = Math.floor(
+          (today.getTime() - fertileStart.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        phaseDay = Math.max(1, daysSinceFertileStart + 1);
+      } else if (dayInfo.isPMS && predictions.ovulationDate) {
+        // In luteal/PMS phase
+        phaseName = 'Luteal';
+        phaseEmoji = '😌';
+        const ovulationDate = new Date(predictions.ovulationDate);
+        ovulationDate.setHours(0, 0, 0, 0);
+        const daysSinceOvulation = Math.floor(
+          (today.getTime() - ovulationDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        phaseDay = Math.max(1, daysSinceOvulation + 1);
+      } else {
+        // In follicular phase
+        phaseName = 'Follicular';
+        phaseEmoji = '🌸';
+        const daysSincePeriodEnd = Math.floor(
+          (today.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        phaseDay = Math.max(1, daysSincePeriodEnd + 1);
+      }
     } else {
-      phaseName = 'Follicular Phase';
-      phaseEmoji = '🌸';
+      // No period data
+      phaseName = 'Cycle';
+      phaseDay = 1;
     }
     
-    return { cycleDay, phaseName, phaseEmoji, dayInfo };
-  }, [periods, predictions]);
+    return { cycleDay, phaseName, phaseDay, phaseEmoji, dayInfo };
+  }, [periods, predictions, settings, currentPeriodInfo]);
 
   const daysUntilPeriod = useMemo(() => {
     if (isOnPeriod || !predictions.nextPeriodDate) return null;
@@ -123,27 +150,35 @@ export default function HomeScreen() {
     return diff > 0 ? diff : null;
   }, [predictions.nextPeriodDate, isOnPeriod]);
 
-  const circleDates = useMemo<DateInfo[]>(() => {
-    const dates: DateInfo[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(today);
-      date.setDate(date.getDate() + i);
-      const dayInfo = getDayInfo(date, periods, predictions);
-      dates.push({
-        day: date.getDate(),
-        date,
-        phase: dayInfo.phase,
-      });
-    }
-    
-    return dates;
-  }, [periods, predictions]);
+  // Check if user has no period data
+  const hasNoPeriodData = useMemo(() => {
+    return periods.length === 0;
+  }, [periods.length]);
+
+  // Removed circleDates - not needed for new design
+
+  const userRef = useRef(user);
+  const isSignedInRef = useRef(isSignedIn);
+  
+  useEffect(() => {
+    userRef.current = user;
+    isSignedInRef.current = isSignedIn;
+  }, [user, isSignedIn]);
 
   const loadData = useCallback(async () => {
-    if (!user || !isSignedIn || loadingRef.current) return;
+    // Use refs to get latest values without causing dependency issues
+    const currentUser = userRef.current;
+    const currentIsSignedIn = isSignedInRef.current;
+    
+    // If not signed in or user not available, stop loading
+    if (!currentIsSignedIn || !currentUser) {
+      setLoading(false);
+      loadingRef.current = false;
+      return;
+    }
+    
+    // Prevent multiple simultaneous loads
+    if (loadingRef.current) return;
     
     loadingRef.current = true;
     setLoading(true);
@@ -162,11 +197,12 @@ export default function HomeScreen() {
       const endOfDay = new Date(today);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const symptoms = await getSymptoms(
-        today.toISOString(),
-        endOfDay.toISOString()
-      ).catch(() => []);
+      const [symptoms, moods] = await Promise.all([
+        getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
+        getMoods(today.toISOString(), endOfDay.toISOString()).catch(() => []),
+      ]);
       setTodaySymptoms(symptoms);
+      setTodayMoods(moods);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Home] Error loading data:', error);
@@ -175,20 +211,26 @@ export default function HomeScreen() {
       setLoading(false);
       loadingRef.current = false;
     }
-  }, [user, isSignedIn]);
+  }, []); // Empty deps - use refs instead
 
   useEffect(() => {
+    // Only load when user or sign-in status changes
     if (user && isSignedIn) {
       loadData();
+    } else {
+      setLoading(false);
+      loadingRef.current = false;
     }
-  }, [user, isSignedIn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isSignedIn]);
 
   useFocusEffect(
     useCallback(() => {
       if (user && isSignedIn && !loadingRef.current) {
         loadData();
       }
-    }, [user, isSignedIn, loadData])
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, isSignedIn])
   );
 
   const handleLogPeriod = useCallback(async () => {
@@ -211,47 +253,85 @@ export default function HomeScreen() {
     }
   }, [user, loadData]);
 
-  const renderCircleDates = useMemo(() => {
-    const angleStep = (2 * Math.PI) / 30;
-    const dateRadius = CIRCLE_RADIUS - 30;
-
-    return circleDates.map((dateInfo, index) => {
-      const angle = index * angleStep - Math.PI / 2;
-      const x = CENTER_X + dateRadius * Math.cos(angle);
-      const y = CENTER_Y + dateRadius * Math.sin(angle);
-
-      let color = '#E0E0E0';
-      if (dateInfo.phase === 'period') color = '#FF6B9D';
-      else if (dateInfo.phase === 'fertile') color = '#4A90E2';
-      else if (dateInfo.phase === 'pms') color = '#66BB6A';
-      else if (dateInfo.phase === 'predicted_period') color = '#FFB3C1';
-
-      const isToday = index === 0;
-
-      return (
-        <G key={index}>
-          <Circle
-            cx={x}
-            cy={y}
-            r={isToday ? 18 : 12}
-            fill={color}
-            stroke={isToday ? '#000' : 'none'}
-            strokeWidth={isToday ? 2 : 0}
-          />
-          <SvgText
-            x={x}
-            y={y + 4}
-            fontSize={isToday ? 12 : 10}
-            fill={isToday ? '#000' : '#666'}
-            textAnchor="middle"
-            fontWeight={isToday ? 'bold' : 'normal'}
-          >
-            {dateInfo.day}
-          </SvgText>
-        </G>
-      );
+  // Memoize tick marks to avoid recalculating on every render
+  const tickMarks = useMemo(() => {
+    return Array.from({ length: 30 }).map((_, i) => {
+      const angle = (i / 30) * 2 * Math.PI - Math.PI / 2;
+      const innerRadius = 160;
+      const outerRadius = 170;
+      const x1 = 200 + innerRadius * Math.cos(angle);
+      const y1 = 200 + innerRadius * Math.sin(angle);
+      const x2 = 200 + outerRadius * Math.cos(angle);
+      const y2 = 200 + outerRadius * Math.sin(angle);
+      return { x1, y1, x2, y2, key: `tick-${i}` };
     });
-  }, [circleDates]);
+  }, []);
+
+  // Memoize SVG offset calculation
+  const svgOffset = useMemo(() => (width - SVG_SIZE) / 2, [width]);
+
+  // Memoize ovulation arc
+  const ovulationArc = useMemo(() => {
+    if (!predictions.ovulationDate) return null;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const ovDate = new Date(predictions.ovulationDate);
+    ovDate.setHours(0, 0, 0, 0);
+    const daysUntilOv = Math.ceil((ovDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (daysUntilOv >= 0 && daysUntilOv < 30) {
+      const arcRadius = 185;
+      const startAngle = -Math.PI / 3; // 1 o'clock
+      const endAngle = 0; // 3 o'clock
+      const startX = 200 + arcRadius * Math.cos(startAngle);
+      const startY = 200 + arcRadius * Math.sin(startAngle);
+      const endX = 200 + arcRadius * Math.cos(endAngle);
+      const endY = 200 + arcRadius * Math.sin(endAngle);
+      
+      return { startX, startY, endX, endY, arcRadius };
+    }
+    return null;
+  }, [predictions.ovulationDate]);
+
+  // Memoize period arc
+  const periodArc = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // If on period, show current period arc
+    if (isOnPeriod && currentPeriodInfo) {
+      const arcRadius = 185;
+      const startAngle = (5 * Math.PI) / 6; // 7 o'clock
+      const endAngle = Math.PI; // 9 o'clock
+      const startX = 200 + arcRadius * Math.cos(startAngle);
+      const startY = 200 + arcRadius * Math.sin(startAngle);
+      const endX = 200 + arcRadius * Math.cos(endAngle);
+      const endY = 200 + arcRadius * Math.sin(endAngle);
+      return { startX, startY, endX, endY, arcRadius };
+    }
+    
+    // If not on period, show next period arc
+    if (predictions.nextPeriodDate && !isOnPeriod) {
+      const periodDate = new Date(predictions.nextPeriodDate);
+      periodDate.setHours(0, 0, 0, 0);
+      const daysUntilPeriod = Math.ceil((periodDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysUntilPeriod >= 0 && daysUntilPeriod < 30) {
+        const arcRadius = 185;
+        const startAngle = (5 * Math.PI) / 6; // 7 o'clock
+        const endAngle = Math.PI; // 9 o'clock
+        const startX = 200 + arcRadius * Math.cos(startAngle);
+        const startY = 200 + arcRadius * Math.sin(startAngle);
+        const endX = 200 + arcRadius * Math.cos(endAngle);
+        const endY = 200 + arcRadius * Math.sin(endAngle);
+        return { startX, startY, endX, endY, arcRadius };
+      }
+    }
+    return null;
+  }, [isOnPeriod, currentPeriodInfo, predictions.nextPeriodDate]);
+
+  // Removed renderCircleDates - not used in new design
 
   if (loading) {
     return (
@@ -272,108 +352,370 @@ export default function HomeScreen() {
 
         {/* Center Circle */}
         <View style={styles.circleContainer}>
-          <Svg width={width} height={CIRCLE_RADIUS * 2 + 120}>
-            {/* Outer circle */}
-            <Circle
-              cx={CENTER_X}
-              cy={CENTER_Y}
-              r={CIRCLE_RADIUS}
-              fill="none"
-              stroke="#E0E0E0"
-              strokeWidth={2}
+          {/* Heart Image Background */}
+          <View style={styles.heartImageContainer}>
+            <Image
+              source={require('../../assets/images/images/heart.png')}
+              style={styles.heartImage}
+              resizeMode="contain"
             />
-            
-            {/* Date circles */}
-            {renderCircleDates}
+          </View>
 
-            {/* Center info */}
-            <G>
-              <Circle
-                cx={CENTER_X}
-                cy={CENTER_Y}
-                r={CIRCLE_RADIUS - 50}
-                fill={phaseColors.tabBackground}
-                opacity={0.2}
+          {/* SVG Circle with all elements */}
+          <View style={{ position: 'absolute', left: svgOffset, top: 0, zIndex: 2 }}>
+            <Svg 
+              width={SVG_SIZE} 
+              height={SVG_SIZE} 
+              viewBox="0 0 400 400"
+            >
+            {/* White circle background */}
+            <Circle
+              cx="200"
+              cy="200"
+              r="175"
+              fill="#FFFFFF"
+              opacity={0.7}
+            />
+
+            {/* Tick marks around the circle */}
+            {tickMarks.map((tick) => (
+              <Line
+                key={tick.key}
+                x1={tick.x1}
+                y1={tick.y1}
+                x2={tick.x2}
+                y2={tick.y2}
+                stroke="#E0E0E0"
+                strokeWidth="2"
               />
-              <SvgText
-                x={CENTER_X}
-                y={CENTER_Y - 20}
-                fontSize={24}
-                fontWeight="bold"
-                fill={Colors.text}
-                textAnchor="middle"
-              >
-                {currentCycleInfo.phaseEmoji}
-              </SvgText>
-              <SvgText
-                x={CENTER_X}
-                y={CENTER_Y + 10}
-                fontSize={16}
-                fontWeight="600"
-                fill={Colors.text}
-                textAnchor="middle"
-              >
-                Day {currentCycleInfo.cycleDay}
-              </SvgText>
-              <SvgText
-                x={CENTER_X}
-                y={CENTER_Y + 30}
-                fontSize={12}
-                fill={Colors.textSecondary}
-                textAnchor="middle"
-              >
-                {currentCycleInfo.phaseName}
-              </SvgText>
-            </G>
-          </Svg>
-        </View>
-
-        {/* Quick Actions */}
-        <View style={styles.actionsContainer}>
-          {isOnPeriod ? (
-            <View style={styles.periodCard}>
-              <Text style={styles.periodTitle}>On Your Period</Text>
-              <Text style={styles.periodSubtitle}>
-                Day {currentPeriodInfo?.dayNumber} of {currentPeriodInfo?.periodLength}
-              </Text>
-              <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/(tabs)/calendar')}>
-                <Text style={styles.actionButtonText}>View Calendar</Text>
-              </TouchableOpacity>
-            </View>
-          ) : daysUntilPeriod ? (
-            <View style={styles.periodCard}>
-              <Text style={styles.periodTitle}>Next Period</Text>
-              <Text style={styles.periodSubtitle}>
-                In {daysUntilPeriod} {daysUntilPeriod === 1 ? 'day' : 'days'}
-              </Text>
-              <TouchableOpacity style={styles.actionButton} onPress={handleLogPeriod}>
-                <Text style={styles.actionButtonText}>Log Period</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.periodCard}>
-              <Text style={styles.periodTitle}>Track Your Cycle</Text>
-              <Text style={styles.periodSubtitle}>Start tracking to get predictions</Text>
-              <TouchableOpacity style={styles.actionButton} onPress={handleLogPeriod}>
-                <Text style={styles.actionButtonText}>Log Period</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* Symptoms */}
-        {todaySymptoms.length > 0 && (
-          <View style={styles.symptomsContainer}>
-            <Text style={styles.sectionTitle}>Today's Symptoms</Text>
-            {todaySymptoms.map((symptom) => (
-              <View key={symptom.id} style={styles.symptomItem}>
-                <Text style={styles.symptomText}>
-                  {symptom.type} (Severity: {symptom.severity}/5)
-                </Text>
-              </View>
             ))}
+
+            {/* Yellow arc for ovulation (top-right, 1-3 o'clock) */}
+            {ovulationArc && (
+              <G key="ovulation-arc">
+                <Path
+                  d={`M ${ovulationArc.startX} ${ovulationArc.startY} A ${ovulationArc.arcRadius} ${ovulationArc.arcRadius} 0 0 1 ${ovulationArc.endX} ${ovulationArc.endY}`}
+                  stroke="#FFD93D"
+                  strokeWidth="14"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                <Circle
+                  cx={ovulationArc.endX}
+                  cy={ovulationArc.endY}
+                  r="10"
+                  fill="#FFD93D"
+                  stroke="#FFFFFF"
+                  strokeWidth="2"
+                />
+              </G>
+            )}
+
+            {/* Pink arc for period (bottom-left, 7-9 o'clock) */}
+            {periodArc && (
+              <Path
+                key={isOnPeriod ? "current-period-arc" : "next-period-arc"}
+                d={`M ${periodArc.startX} ${periodArc.startY} A ${periodArc.arcRadius} ${periodArc.arcRadius} 0 0 1 ${periodArc.endX} ${periodArc.endY}`}
+                stroke="#FF69B4"
+                strokeWidth="14"
+                fill="none"
+                strokeLinecap="round"
+              />
+            )}
+
+            {/* Phase Name at top (12 o'clock) - replaces "Periods" */}
+            <SvgText
+              x="200"
+              y="115"
+              textAnchor="middle"
+              fontSize="13"
+              fill="#333"
+              fontWeight="600"
+            >
+              {currentCycleInfo.phaseName}
+            </SvgText>
+
+            {/* Center content: Phase day or days left */}
+            {hasNoPeriodData ? (
+              // Blank state when no period data
+              <>
+                <SvgText
+                  x="200"
+                  y="195"
+                  textAnchor="middle"
+                  fontSize="60"
+                  fill="#000"
+                  fontWeight="bold"
+                >
+                  —
+                </SvgText>
+                <SvgText
+                  x="200"
+                  y="220"
+                  textAnchor="middle"
+                  fontSize="14"
+                  fill="#666"
+                  fontWeight="500"
+                >
+                  days left
+                </SvgText>
+              </>
+            ) : daysUntilPeriod !== null && daysUntilPeriod <= 3 && daysUntilPeriod > 0 ? (
+              // Show days until next period when 3 or less days
+              <>
+                <SvgText
+                  x="200"
+                  y="195"
+                  textAnchor="middle"
+                  fontSize="60"
+                  fill="#000"
+                  fontWeight="bold"
+                >
+                  {daysUntilPeriod}
+                </SvgText>
+                <SvgText
+                  x="200"
+                  y="220"
+                  textAnchor="middle"
+                  fontSize="14"
+                  fill="#666"
+                  fontWeight="500"
+                >
+                  {daysUntilPeriod === 1 ? 'day left' : 'days left'}
+                </SvgText>
+              </>
+            ) : (
+              // Show current phase day
+              <>
+                <SvgText
+                  x="200"
+                  y="195"
+                  textAnchor="middle"
+                  fontSize="60"
+                  fill="#000"
+                  fontWeight="bold"
+                >
+                  {currentCycleInfo.phaseDay}
+                </SvgText>
+                <SvgText
+                  x="200"
+                  y="228"
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill="#666"
+                  fontWeight="500"
+                >
+                  day of {currentCycleInfo.phaseName.toLowerCase()}
+                </SvgText>
+              </>
+            )}
+
+            {/* Next Period information - always shown */}
+            <SvgText
+              x="200"
+              y="255"
+              textAnchor="middle"
+              fontSize="15"
+              fill="#666"
+              fontWeight="600"
+            >
+              Next Period
+            </SvgText>
+            <SvgText
+              x="200"
+              y="277"
+              textAnchor="middle"
+              fontSize="14"
+              fill="#666"
+              fontWeight="500"
+            >
+              {hasNoPeriodData || !predictions.nextPeriodDate
+                ? 'Calculating...'
+                : `will start on - ${new Date(predictions.nextPeriodDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase()}`}
+            </SvgText>
+            </Svg>
+          </View>
+
+          {/* Log Period Button - inside circle */}
+          <TouchableOpacity
+            style={styles.logPeriodButtonInside}
+            onPress={handleLogPeriod}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.logPeriodButtonTextInside}>Log Period</Text>
+          </TouchableOpacity>
+
+          {/* Mascot (Giraffe) in bottom-right */}
+          <View style={styles.mascotContainer}>
+            <Text style={styles.mascotEmoji}>🦒</Text>
+          </View>
+        </View>
+
+        {/* Cycle Phase Cards or Blank State Card */}
+        {hasNoPeriodData ? (
+          <View style={styles.blankStateCardContainer}>
+            <View style={styles.blankStateCard}>
+              <Text style={styles.blankStateCardTitle}>Today - Cycle Day 1</Text>
+              <Text style={styles.blankStateCardSubtitle}>LOW - Chance of getting pregnant</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.phaseCardsContainer}>
+            {/* Next Period Card */}
+            {(predictions.nextPeriodDate || isOnPeriod) && (
+              <View style={[styles.phaseCard, styles.periodCard]}>
+                <View style={styles.phaseCardContent}>
+                  <Text style={styles.phaseCardTitle}>
+                    {isOnPeriod ? 'On Your Period' : 'Next Period'}
+                  </Text>
+                  <Text style={styles.phaseCardDate}>
+                    {isOnPeriod && currentPeriodInfo
+                      ? `Day ${currentPeriodInfo.dayNumber} of ${currentPeriodInfo.periodLength}`
+                      : daysUntilPeriod !== null
+                      ? `in ${daysUntilPeriod} ${daysUntilPeriod === 1 ? 'day' : 'days'}`
+                      : predictions.nextPeriodDate
+                      ? new Date(predictions.nextPeriodDate).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : 'Calculating...'}
+                  </Text>
+                </View>
+                <View style={styles.phaseCardIcon}>
+                  <Image
+                    source={require('../../assets/images/images/drop_icon.png')}
+                    style={styles.phaseCardIconImage}
+                    resizeMode="contain"
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Ovulation Card */}
+            {predictions.ovulationDate && (
+              <View style={[styles.phaseCard, styles.ovulationCard]}>
+                <View style={styles.phaseCardContent}>
+                  <Text style={styles.phaseCardTitle}>Ovulation</Text>
+                  <Text style={styles.phaseCardDate}>
+                    {new Date(predictions.ovulationDate).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </Text>
+                </View>
+                <View style={styles.phaseCardIcon}>
+                  <Image
+                    source={require('../../assets/images/images/flower_icon.png')}
+                    style={styles.phaseCardIconImage}
+                    resizeMode="contain"
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Fertility Window Card */}
+            {predictions.fertileWindowStart && predictions.fertileWindowEnd && (
+              <View style={[styles.phaseCard, styles.fertilityCard]}>
+                <View style={styles.phaseCardContent}>
+                  <Text style={styles.phaseCardTitle}>Fertility Window</Text>
+                  <Text style={styles.phaseCardDate}>
+                    {new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}{' '}
+                    -{' '}
+                    {new Date(predictions.fertileWindowEnd).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </Text>
+                </View>
+                <View style={styles.phaseCardIcon}>
+                  <Image
+                    source={require('../../assets/images/images/heart_icon.png')}
+                    style={styles.phaseCardIconImage}
+                    resizeMode="contain"
+                  />
+                </View>
+              </View>
+            )}
           </View>
         )}
+
+        {/* Today's Insights */}
+        <View style={styles.insightsContainer}>
+          <View style={styles.insightsHeader}>
+            <Text style={styles.insightsTitle}>My daily insights</Text>
+            <TouchableOpacity
+              style={styles.logButton}
+              onPress={() => router.push('/log-symptoms')}
+            >
+              <Ionicons name="add" size={20} color={Colors.primary} />
+              <Text style={styles.logButtonText}>Log symptoms</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {(todaySymptoms.length > 0 || todayMoods.length > 0) ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.insightsScrollContent}
+            >
+              {todayMoods.map((mood) => (
+                <TouchableOpacity
+                  key={`mood-${mood.id}`}
+                  style={styles.insightCard}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/(tabs)/chat',
+                      params: { 
+                        initialMessage: `I'm feeling ${mood.type} today. Can you help me understand this?`,
+                      },
+                    });
+                  }}
+                >
+                  <View style={styles.insightIconContainer}>
+                    <Text style={styles.insightEmoji}>😊</Text>
+                  </View>
+                  <Text style={styles.insightText} numberOfLines={2}>
+                    {mood.type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              {todaySymptoms.map((symptom) => (
+                <TouchableOpacity
+                  key={`symptom-${symptom.id}`}
+                  style={styles.insightCard}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/(tabs)/chat',
+                      params: { 
+                        initialMessage: `I'm experiencing ${symptom.type} today. Can you help me?`,
+                      },
+                    });
+                  }}
+                >
+                  <View style={styles.insightIconContainer}>
+                    <Text style={styles.insightEmoji}>🔴</Text>
+                  </View>
+                  <Text style={styles.insightText} numberOfLines={2}>
+                    {symptom.type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <TouchableOpacity
+              style={styles.emptyInsightCard}
+              onPress={() => router.push('/log-symptoms')}
+            >
+              <View style={styles.emptyInsightIcon}>
+                <Ionicons name="add" size={32} color={Colors.primary} />
+              </View>
+              <Text style={styles.emptyInsightText}>Log your symptoms</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* Quick Stats */}
         <View style={styles.statsContainer}>
@@ -425,44 +767,128 @@ const styles = StyleSheet.create({
   },
   circleContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
     marginVertical: 20,
+    position: 'relative',
+    width: width,
+    height: 400,
+    alignSelf: 'center',
   },
-  actionsContainer: {
-    padding: 20,
+  heartImageContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    width: '100%',
+    height: 400,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
   },
-  periodCard: {
+  heartImage: {
+    width: 360, // 90% of 400 (circle size)
+    height: 360,
+    opacity: 0.7,
+    tintColor: '#FFC1D6',
+  },
+  mascotContainer: {
+    position: 'absolute',
+    top: 125,
+    right: (width - 400) / 2 - 20, // Adjusted to be right of the circle
+    zIndex: 7,
+  },
+  mascotEmoji: {
+    fontSize: 150,
+  },
+  logPeriodButtonInside: {
+    position: 'absolute',
+    top: 290, // Position below "Next Period" text, inside circle
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  logPeriodButtonTextInside: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.primary,
+    textDecorationLine: 'underline',
+  },
+  blankStateCardContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  blankStateCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 20,
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
   },
-  periodTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  blankStateCardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
     color: Colors.text,
     marginBottom: 8,
   },
-  periodSubtitle: {
-    fontSize: 16,
+  blankStateCardSubtitle: {
+    fontSize: 14,
     color: Colors.textSecondary,
-    marginBottom: 16,
   },
-  actionButton: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
+  phaseCardsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    gap: 12,
+  },
+  phaseCard: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 16,
+    minHeight: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    justifyContent: 'space-between',
+  },
+  periodCard: {
+    backgroundColor: '#FFE5ED', // Light pink
+  },
+  ovulationCard: {
+    backgroundColor: '#FFE8D6', // Light peach/orange
+  },
+  fertilityCard: {
+    backgroundColor: '#E3F2FD', // Light blue
+  },
+  phaseCardContent: {
+    flex: 1,
+  },
+  phaseCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 6,
+  },
+  phaseCardDate: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+  },
+  phaseCardIcon: {
+    alignItems: 'flex-end',
     marginTop: 8,
   },
-  actionButtonText: {
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: '600',
+  phaseCardIconImage: {
+    width: 40,
+    height: 40,
   },
   symptomsContainer: {
     padding: 20,
@@ -512,5 +938,92 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
   },
+  insightsContainer: {
+    padding: 20,
+    paddingTop: 0,
+  },
+  insightsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  insightsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.text,
+  },
+  logButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+  },
+  logButtonText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  insightsScrollContent: {
+    gap: 12,
+    paddingRight: 20,
+  },
+  insightCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 16,
+    width: 120,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  insightIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  insightEmoji: {
+    fontSize: 24,
+  },
+  insightText: {
+    fontSize: 12,
+    color: Colors.text,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  emptyInsightCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+  },
+  emptyInsightIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  emptyInsightText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
 });
-

@@ -37,6 +37,13 @@ function resolveApiBase(): string {
 
 const API_URL = resolveApiBase();
 
+// Helper function to get Clerk token and add to request
+let getClerkToken: (() => Promise<string | null>) | null = null;
+
+export function setClerkTokenGetter(tokenGetter: () => Promise<string | null>) {
+  getClerkToken = tokenGetter;
+}
+
 export const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -45,9 +52,23 @@ export const api = axios.create({
   timeout: 30000,
 });
 
-// Add request interceptor for debugging
+// Add request interceptor for debugging and auth token
 api.interceptors.request.use(
-  (config) => {
+  async (config) => {
+    // Add auth token if available
+    try {
+      if (getClerkToken) {
+        const token = await getClerkToken();
+        if (token && !config.headers?.Authorization) {
+          config.headers = config.headers || {};
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+      }
+    } catch (error) {
+      // Silent - token getter might not be ready yet
+    }
+
+    // Log request for debugging
     console.log('[API Request]', {
       method: config.method?.toUpperCase(),
       url: config.url,
@@ -124,4 +145,145 @@ export const loginForOtherAPI = {
     });
     return response.data;
   },
+};
+
+// Type definitions
+export interface Period {
+  id: string;
+  startDate: string;
+  endDate: string | null;
+  flowLevel: 'light' | 'medium' | 'heavy' | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Symptom {
+  id: string;
+  date: string;
+  type: string;
+  severity: number;
+  createdAt: string;
+}
+
+export interface Mood {
+  id: string;
+  date: string;
+  type: string;
+  createdAt: string;
+}
+
+export interface UserSettings {
+  id?: string;
+  userId?: string;
+  averageCycleLength: number;
+  averagePeriodLength: number;
+  periodDuration?: number;
+  lastPeriodDate?: string | null;
+  birthYear?: number | null;
+  reminderEnabled?: boolean;
+  reminderDaysBefore?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Period API functions
+export const getPeriods = async (): Promise<Period[]> => {
+  const response = await api.get('/api/periods');
+  return response.data.periods || [];
+};
+
+export const createPeriod = async (data: {
+  startDate: string;
+  endDate?: string | null;
+  flowLevel?: 'light' | 'medium' | 'heavy' | null;
+}): Promise<Period> => {
+  const response = await api.post('/api/periods', data);
+  return response.data.period || response.data;
+};
+
+export const updatePeriod = async (id: string, data: {
+  startDate?: string;
+  endDate?: string | null;
+  flowLevel?: 'light' | 'medium' | 'heavy' | null;
+}): Promise<Period> => {
+  const response = await api.patch(`/api/periods/${id}`, data);
+  return response.data.period || response.data;
+};
+
+export const deletePeriod = async (id: string): Promise<void> => {
+  await api.delete(`/api/periods/${id}`);
+};
+
+// Settings API functions
+export const getSettings = async (): Promise<UserSettings | null> => {
+  try {
+    const response = await api.get('/api/user/settings');
+    return response.data.settings || null;
+  } catch (error: any) {
+    if (error.response?.status === 401 || error.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+// Symptoms API functions
+export const getSymptoms = async (startDate?: string, endDate?: string): Promise<Symptom[]> => {
+  const params: any = {};
+  if (startDate) params.startDate = startDate;
+  if (endDate) params.endDate = endDate;
+  
+  const response = await api.get('/api/symptoms', { params });
+  return response.data.symptoms || [];
+};
+
+export const createSymptom = async (data: {
+  date: string;
+  type: string;
+  severity?: number;
+}): Promise<Symptom> => {
+  const response = await api.post('/api/symptoms', {
+    date: data.date,
+    type: data.type,
+    severity: data.severity || 3,
+  });
+  return response.data.symptom || response.data;
+};
+
+export const deleteSymptom = async (id: string): Promise<void> => {
+  await api.delete(`/api/symptoms/${id}`);
+};
+
+// Moods API functions
+export const getMoods = async (startDate?: string, endDate?: string): Promise<Mood[]> => {
+  const params: any = {};
+  if (startDate) params.startDate = startDate;
+  if (endDate) params.endDate = endDate;
+  
+  const response = await api.get('/api/moods', { params });
+  return response.data.moods || [];
+};
+
+export const createMood = async (data: {
+  date: string;
+  type: string;
+}): Promise<Mood> => {
+  const response = await api.post('/api/moods', {
+    date: data.date,
+    type: data.type,
+  });
+  return response.data.mood || response.data;
+};
+
+export const deleteMood = async (id: string): Promise<void> => {
+  await api.delete(`/api/moods/${id}`);
+};
+
+// Chat API function
+export const chatWithAI = async (messages: Array<{ role: string; content: string }>, symptoms?: any[]): Promise<string> => {
+  const response = await api.post('/api/chat', {
+    messages,
+    symptoms,
+  });
+  return response.data.response || response.data.message || 'I understand your question. Let me help you with that.';
 };

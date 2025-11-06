@@ -71,7 +71,7 @@ export default function ChooseLoginTypeScreen() {
           const hasCompletedOnboarding = data.settings?.birthYear || data.settings?.lastPeriodDate;
           
           if (hasCompletedOnboarding) {
-            router.replace('/home');
+            router.replace('/(tabs)/home');
           } else {
             router.replace('/onboarding');
           }

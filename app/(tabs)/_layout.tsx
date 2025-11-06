@@ -1,69 +1,57 @@
-import { Tabs, Redirect } from 'expo-router';
-import { useAuth } from '@clerk/clerk-expo';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { Colors } from '../../constants/Colors';
-import CustomTabBar from '../../components/CustomTabBar';
-import { PhaseProvider } from '../../contexts/PhaseContext';
+import { Tabs } from 'expo-router';
+import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors } from '@/constants/Colors';
 
-export default function TabsLayout() {
-  const { isSignedIn, isLoaded } = useAuth();
-
-  // Protect tabs - require authentication
-  if (!isLoaded) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
-    );
-  }
-
-  if (!isSignedIn) {
-    return <Redirect href="/(auth)/sign-in" />;
-  }
-
+export default function TabLayout() {
   return (
-    <PhaseProvider>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' }, // Hide default tab bar
+    <Tabs
+      screenOptions={{
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textSecondary,
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: Colors.white,
+          borderTopWidth: 1,
+          borderTopColor: Colors.border,
+        },
+      }}>
+      <Tabs.Screen
+        name="home"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size} color={color} />
+          ),
         }}
-        tabBar={(props) => <CustomTabBar {...props} />}
-      >
-        <Tabs.Screen
-          name="home"
-          options={{
-            title: 'Home',
-          }}
-        />
-        <Tabs.Screen
-          name="calendar"
-          options={{
-            title: 'Calendar',
-          }}
-        />
-        <Tabs.Screen
-          name="chat"
-          options={{
-            title: 'AI Chat',
-          }}
-        />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: 'Profile',
-          }}
-        />
-      </Tabs>
-    </PhaseProvider>
+      />
+      <Tabs.Screen
+        name="calendar"
+        options={{
+          title: 'Calendar',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person" size={size} color={color} />
+          ),
+        }}
+      />
+    </Tabs>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background,
-  },
-});
