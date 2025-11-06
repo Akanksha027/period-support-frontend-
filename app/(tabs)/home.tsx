@@ -13,9 +13,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Svg, { Circle, G, Text as SvgText, Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../constants/Colors';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { getPeriods, getSettings, getSymptoms, getMoods, createPeriod, Period, UserSettings, Symptom, Mood } from '../../lib/api';
+import { getPeriods, getSettings, getSymptoms, getMoods, createPeriod, Period, UserSettings, Symptom, Mood, getReminderStatus, generateReminder, Reminder } from '../../lib/api';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
@@ -36,6 +37,9 @@ export default function HomeScreen() {
   const [todaySymptoms, setTodaySymptoms] = useState<Symptom[]>([]);
   const [todayMoods, setTodayMoods] = useState<Mood[]>([]);
   const [userName, setUserName] = useState<string>('');
+  const [lastReminder, setLastReminder] = useState<Reminder | null>(null);
+  const [reminderEnabled, setReminderEnabled] = useState<boolean>(false);
+  const [generatingReminder, setGeneratingReminder] = useState<boolean>(false);
   const loadingRef = useRef(false);
 
   // Set up token getter
@@ -155,6 +159,55 @@ export default function HomeScreen() {
     return periods.length === 0;
   }, [periods.length]);
 
+  // Phase-based gradient colors (white to phase color)
+  const phaseGradientColors = useMemo((): [string, string, string] => {
+    const phase = currentCycleInfo.phaseName;
+    const dayInfo = currentCycleInfo.dayInfo;
+    
+    // Check if it's the exact ovulation day (not just fertile window)
+    if (dayInfo.isFertile && predictions.ovulationDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const ovDate = new Date(predictions.ovulationDate);
+      ovDate.setHours(0, 0, 0, 0);
+      if (today.getTime() === ovDate.getTime()) {
+        // Exact ovulation day - use blue
+        return ['#FFFFFF', '#E3F2FD', '#BBDEFB'];
+      }
+    }
+    
+    switch (phase) {
+      case 'Period':
+        // White to light reddish pink
+        return ['#FFFFFF', '#FFE5ED', '#FFD1DC'];
+      case 'Ovulation':
+        // Check if it's fertile window (yellow) or exact ovulation day (blue)
+        if (dayInfo.isFertile && predictions.ovulationDate) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const ovDate = new Date(predictions.ovulationDate);
+          ovDate.setHours(0, 0, 0, 0);
+          // If it's the exact ovulation day, use blue, otherwise yellow for fertile window
+          if (today.getTime() === ovDate.getTime()) {
+            return ['#FFFFFF', '#E3F2FD', '#BBDEFB']; // Blue for ovulation day
+          } else {
+            return ['#FFFFFF', '#FFF9E6', '#FFECB3']; // Yellow for fertile window
+          }
+        }
+        // Default to yellow for fertile window if we can't determine
+        return ['#FFFFFF', '#FFF9E6', '#FFECB3'];
+      case 'Luteal':
+        // White to light purple/pink
+        return ['#FFFFFF', '#F3E5F5', '#E1BEE7'];
+      case 'Follicular':
+        // White to light green/blue (subtle)
+        return ['#FFFFFF', '#F1F8F4', '#E8F5E9'];
+      default:
+        // Default: white to very light gray
+        return ['#FFFFFF', '#FAFAFA', '#F5F5F5'];
+    }
+  }, [currentCycleInfo.phaseName, currentCycleInfo.dayInfo, predictions.ovulationDate]);
+
   // Removed circleDates - not needed for new design
 
   const userRef = useRef(user);
@@ -197,12 +250,15 @@ export default function HomeScreen() {
       const endOfDay = new Date(today);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const [symptoms, moods] = await Promise.all([
+      const [symptoms, moods, reminderStatus] = await Promise.all([
         getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
         getMoods(today.toISOString(), endOfDay.toISOString()).catch(() => []),
+        getReminderStatus().catch(() => ({ enabled: false, lastReminder: null })),
       ]);
       setTodaySymptoms(symptoms);
       setTodayMoods(moods);
+      setReminderEnabled(reminderStatus.enabled);
+      setLastReminder(reminderStatus.lastReminder);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Home] Error loading data:', error);
@@ -232,6 +288,31 @@ export default function HomeScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, isSignedIn])
   );
+
+  const handleGenerateReminder = useCallback(async () => {
+    if (!settings?.reminderEnabled) {
+      Alert.alert('Reminders Disabled', 'Please enable reminders in your profile settings first.');
+      return;
+    }
+
+    setGeneratingReminder(true);
+    try {
+      const response = await generateReminder();
+      if (response.success && response.reminder) {
+        setLastReminder(response.reminder);
+        Alert.alert('Reminder Generated', 'Your personalized reminder has been generated!');
+      } else {
+        // Show the actual message from the backend
+        const errorMessage = response.message || 'Could not generate a reminder at this time. Please try again later.';
+        Alert.alert('Unable to Generate', errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error generating reminder:', error);
+      Alert.alert('Error', error.message || 'Failed to generate reminder. Please try again.');
+    } finally {
+      setGeneratingReminder(false);
+    }
+  }, [settings?.reminderEnabled]);
 
   const handleLogPeriod = useCallback(async () => {
     if (!user) return;
@@ -342,8 +423,14 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <LinearGradient
+      colors={phaseGradientColors}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={styles.gradientContainer}
+    >
+      <SafeAreaView style={styles.container}>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.greeting}>Welcome, {userName}! 👋</Text>
@@ -551,15 +638,8 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Cycle Phase Cards or Blank State Card */}
-        {hasNoPeriodData ? (
-          <View style={styles.blankStateCardContainer}>
-            <View style={styles.blankStateCard}>
-              <Text style={styles.blankStateCardTitle}>Today - Cycle Day 1</Text>
-              <Text style={styles.blankStateCardSubtitle}>LOW - Chance of getting pregnant</Text>
-            </View>
-          </View>
-        ) : (
+        {/* Cycle Phase Cards */}
+        {!hasNoPeriodData && (
           <View style={styles.phaseCardsContainer}>
             {/* Next Period Card */}
             {(predictions.nextPeriodDate || isOnPeriod) && (
@@ -637,6 +717,58 @@ export default function HomeScreen() {
                     resizeMode="contain"
                   />
                 </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Reminders Section */}
+        {settings?.reminderEnabled && (
+          <View style={styles.remindersContainer}>
+            <View style={styles.remindersHeader}>
+              <View style={styles.remindersHeaderLeft}>
+                <Ionicons name="notifications" size={24} color={Colors.primary} />
+                <Text style={styles.remindersTitle}>Your Reminder</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.generateReminderButton, generatingReminder && styles.generateReminderButtonDisabled]}
+                onPress={handleGenerateReminder}
+                disabled={generatingReminder}
+              >
+                {generatingReminder ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <>
+                    <Ionicons name="refresh" size={16} color={Colors.white} />
+                    <Text style={styles.generateReminderButtonText}>Generate</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {lastReminder ? (
+              <View style={styles.reminderCard}>
+                <Text style={styles.reminderMessage}>{lastReminder.message}</Text>
+                {lastReminder.phase && (
+                  <Text style={styles.reminderMeta}>
+                    {lastReminder.phase} Phase • {lastReminder.cycleDay ? `Day ${lastReminder.cycleDay}` : ''}
+                  </Text>
+                )}
+                <Text style={styles.reminderDate}>
+                  {new Date(lastReminder.sentAt).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.reminderCardEmpty}>
+                <Ionicons name="notifications-outline" size={32} color={Colors.textSecondary} />
+                <Text style={styles.reminderEmptyText}>
+                  No reminder yet. Tap "Generate" to get a personalized reminder based on your cycle!
+                </Text>
               </View>
             )}
           </View>
@@ -732,15 +864,19 @@ export default function HomeScreen() {
             <Text style={styles.statLabel}>Periods</Text>
           </View>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  gradientContainer: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',
   },
   centerContainer: {
     flex: 1,
@@ -814,30 +950,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.primary,
     textDecorationLine: 'underline',
-  },
-  blankStateCardContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  blankStateCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  blankStateCardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  blankStateCardSubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
   },
   phaseCardsContainer: {
     flexDirection: 'row',
@@ -1025,5 +1137,88 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     fontWeight: '500',
+  },
+  remindersContainer: {
+    paddingHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  remindersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  remindersHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  remindersTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+  },
+  generateReminderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  generateReminderButtonDisabled: {
+    opacity: 0.6,
+  },
+  generateReminderButtonText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  reminderCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.primary,
+  },
+  reminderMessage: {
+    fontSize: 15,
+    color: Colors.text,
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  reminderMeta: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  reminderDate: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  reminderCardEmpty: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+  },
+  reminderEmptyText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 20,
   },
 });

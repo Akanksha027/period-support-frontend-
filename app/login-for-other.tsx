@@ -90,8 +90,9 @@ export default function LoginForOtherScreen() {
         // Store viewer info for later use
         console.log('Login completed:', completeResponse.viewer);
         
-        // OTP verified and OTHER user created successfully, navigate to home for someone else
-        router.replace('/home-for-other');
+        // OTP verified and OTHER user created successfully, navigate to tabs home
+        // The app will automatically detect userType=OTHER and show view-only mode
+        router.replace('/(tabs)/home');
       } else {
         Alert.alert('Error', completeResponse.error || 'Failed to complete login. Please try again.');
       }

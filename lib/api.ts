@@ -147,6 +147,54 @@ export const loginForOtherAPI = {
   },
 };
 
+// Reminders API functions
+export interface Reminder {
+  id: string;
+  message: string;
+  phase?: string | null;
+  cycleDay?: number | null;
+  sentAt: string;
+}
+
+export interface ReminderStatus {
+  enabled: boolean;
+  lastReminder: Reminder | null;
+}
+
+export const getReminderStatus = async (): Promise<ReminderStatus> => {
+  try {
+    const response = await api.get('/api/reminders/status');
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 401 || error.response?.status === 404) {
+      return { enabled: false, lastReminder: null };
+    }
+    throw error;
+  }
+};
+
+export interface GenerateReminderResponse {
+  success: boolean;
+  reminder: Reminder | null;
+  message?: string;
+}
+
+export const generateReminder = async (): Promise<GenerateReminderResponse> => {
+  try {
+    const response = await api.post('/api/reminders/generate');
+    return {
+      success: response.data.success || false,
+      reminder: response.data.reminder || null,
+      message: response.data.message || null,
+    };
+  } catch (error: any) {
+    if (error.response?.status === 401) {
+      throw new Error('Please log in to generate reminders');
+    }
+    throw error;
+  }
+};
+
 // Type definitions
 export interface Period {
   id: string;
@@ -212,6 +260,31 @@ export const updatePeriod = async (id: string, data: {
 
 export const deletePeriod = async (id: string): Promise<void> => {
   await api.delete(`/api/periods/${id}`);
+};
+
+// User API functions
+export interface UserInfo {
+  id: string;
+  email: string;
+  name: string | null;
+  clerkId: string;
+  userType: 'SELF' | 'OTHER';
+  viewedUserId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  settings?: UserSettings | null;
+}
+
+export const getUserInfo = async (): Promise<UserInfo | null> => {
+  try {
+    const response = await api.get('/api/user');
+    return response.data.user || null;
+  } catch (error: any) {
+    if (error.response?.status === 401 || error.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 };
 
 // Settings API functions
