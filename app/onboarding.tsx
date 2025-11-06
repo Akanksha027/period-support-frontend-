@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useUser } from '@clerk/clerk-expo';
+import { useUser, useAuth } from '@clerk/clerk-expo';
 import { api } from '@/lib/api';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -20,6 +20,7 @@ type Step = 'birthDate' | 'lastPeriod' | 'periodDuration' | 'cycleLength' | 'com
 export default function OnboardingScreen() {
   const router = useRouter();
   const { user } = useUser();
+  const { getToken } = useAuth();
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<Step>('birthDate');
 
@@ -84,26 +85,59 @@ export default function OnboardingScreen() {
       const cycleLen = rememberCycleLength === false ? 28 : (averageCycleLength ? parseInt(averageCycleLength) : 28);
 
       // Get token first
-      const token = await user.getToken();
+      const token = await getToken();
       if (!token) {
         Alert.alert('Error', 'Authentication failed. Please try again.');
         return;
       }
 
+      const email = user.emailAddresses[0]?.emailAddress;
+      const clerkId = user.id;
+
+      // Validate required data
+      if (!email || !clerkId) {
+        Alert.alert('Error', 'Missing user information. Please try logging in again.');
+        return;
+      }
+
+      // Log for debugging
+      console.log('[Onboarding] Sending request with:', {
+        email,
+        clerkId,
+        hasToken: !!token,
+        tokenLength: token.length,
+        tokenPreview: token.substring(0, 30) + '...',
+        birthYear,
+        lastPeriodDate: lastPeriod ? lastPeriod.toISOString() : null,
+        periodDuration: periodDur,
+        averageCycleLength: cycleLen,
+      });
+
       // Save settings to backend
+      // Include clerkId and email in body AND query params for backend fallback authentication
+      const requestBody = {
+        birthYear,
+        lastPeriodDate: lastPeriod ? lastPeriod.toISOString() : null,
+        periodDuration: periodDur,
+        averageCycleLength: cycleLen,
+        email,
+        clerkId,
+      };
+
+      console.log('[Onboarding] Request Body:', JSON.stringify(requestBody, null, 2));
+
+      // Use params option instead of URL query string so axios properly parses it
       const response = await api.patch(
         '/api/user/settings',
-        {
-          birthYear,
-          lastPeriodDate: lastPeriod ? lastPeriod.toISOString() : null,
-          periodDuration: periodDur,
-          averageCycleLength: cycleLen,
-          email: user.emailAddresses[0]?.emailAddress,
-          clerkId: user.id,
-        },
+        requestBody,
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          params: {
+            clerkId,
+            email,
           },
         }
       );
@@ -116,7 +150,19 @@ export default function OnboardingScreen() {
       }
     } catch (error: any) {
       console.error('Onboarding error:', error);
-      Alert.alert('Error', error?.response?.data?.error || 'Failed to complete onboarding. Please try again.');
+      console.error('Error details:', {
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+      
+      const errorMessage = error?.response?.data?.error || 
+                          error?.response?.data?.details ||
+                          error?.message || 
+                          'Failed to complete onboarding. Please try again.';
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
     }

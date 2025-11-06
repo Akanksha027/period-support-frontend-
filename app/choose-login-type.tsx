@@ -2,11 +2,12 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter, Redirect } from 'expo-router';
 import { useUser, useAuth } from '@clerk/clerk-expo';
+import { api } from '@/lib/api';
 
 export default function ChooseLoginTypeScreen() {
   const router = useRouter();
   const { user, isLoaded: userLoaded } = useUser();
-  const { isSignedIn, isLoaded: authLoaded } = useAuth();
+  const { isSignedIn, isLoaded: authLoaded, getToken } = useAuth();
 
   // Show loading while checking auth state
   if (!authLoaded || !userLoaded) {
@@ -26,37 +27,71 @@ export default function ChooseLoginTypeScreen() {
     // Check if user has completed onboarding
     // If not, redirect to onboarding screen
     try {
-      const token = await user?.getToken();
-      if (!token) {
-        router.replace('/home');
+      // Ensure user exists and is loaded
+      if (!user || !isSignedIn) {
+        router.replace('/onboarding');
         return;
       }
 
-      // Check if user has settings (completed onboarding)
-      const response = await fetch('https://period-tracking-backend.vercel.app/api/user/settings', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+      // Get token from auth
+      const token = await getToken();
+      if (!token) {
+        // If no token, assume onboarding not complete
+        router.replace('/onboarding');
+        return;
+      }
+
+      const email = user.emailAddresses[0]?.emailAddress;
+      const clerkId = user.id;
+
+      // Log for debugging
+      console.log('[ChooseLoginType] Checking onboarding with:', {
+        email,
+        clerkId,
+        hasToken: !!token,
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        // Check if user has completed onboarding (has birthYear or lastPeriodDate)
-        const hasCompletedOnboarding = data.settings?.birthYear || data.settings?.lastPeriodDate;
-        
-        if (hasCompletedOnboarding) {
-          router.replace('/home');
+      // Check if user has settings (completed onboarding)
+      // Include clerkId and email for backend fallback authentication
+      try {
+        const response = await api.get('/api/user/settings', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          params: {
+            clerkId,
+            email,
+          },
+        });
+
+        if (response.data) {
+          const data = response.data;
+          // Check if user has completed onboarding (has birthYear or lastPeriodDate)
+          const hasCompletedOnboarding = data.settings?.birthYear || data.settings?.lastPeriodDate;
+          
+          if (hasCompletedOnboarding) {
+            router.replace('/home');
+          } else {
+            router.replace('/onboarding');
+          }
         } else {
+          // If no data, assume onboarding not complete
           router.replace('/onboarding');
         }
-      } else {
-        // If error, assume onboarding not complete
-        router.replace('/onboarding');
+      } catch (apiError: any) {
+        // 401 or 404 means user doesn't have settings yet (not completed onboarding)
+        // This is expected for new users
+        if (apiError?.response?.status === 401 || apiError?.response?.status === 404) {
+          router.replace('/onboarding');
+        } else {
+          // Other errors, log and redirect to onboarding
+          console.error('Error checking onboarding status:', apiError);
+          router.replace('/onboarding');
+        }
       }
     } catch (error) {
-      console.error('Error checking onboarding status:', error);
+      console.error('Error in handleLoginForSelf:', error);
       // On error, go to onboarding to be safe
       router.replace('/onboarding');
     }
