@@ -14,14 +14,14 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const fetchUserData = async () => {
-      if (!user || !isSignedIn || !getToken) return;
+      if (!user || !isSignedIn) return;
 
       try {
         const token = await getToken();
         if (!token) return;
 
         // Get user profile to get name
-        // The backend will decode from token, but we can also send email as query param as fallback
+        // Include clerkId and email for backend fallback authentication
         const response = await api.get('/api/user', {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -118,4 +118,3 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
 });
-
