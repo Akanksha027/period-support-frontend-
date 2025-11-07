@@ -9,25 +9,28 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Svg, { Circle, G, Text as SvgText, Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, G, Text as SvgText, Path, Line } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../constants/Colors';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { getPeriods, getSettings, getSymptoms, getMoods, createPeriod, Period, UserSettings, Symptom, Mood, getReminderStatus, generateReminder, Reminder, getUserInfo, UserInfo } from '../../lib/api';
+import { getPeriods, getSettings, getSymptoms, getMoods, Period, UserSettings, Symptom, Mood, getReminderStatus, generateReminder, Reminder, getUserInfo, UserInfo } from '../../lib/api';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 
+// Fallback constants for symptom data
+const safeSymptomOptions: any[] = [];
+const safeSymptomData: any = {};
+
 const { width } = Dimensions.get('window');
 const CIRCLE_RADIUS = 155;
 const SVG_SIZE = 400;
 
-export default function HomeScreen() {
+export default function ViewerInsightsScreen() {
   const router = useRouter();
   const { user } = useUser();
   const { isSignedIn, getToken } = useAuth();
@@ -38,7 +41,7 @@ export default function HomeScreen() {
   const [todaySymptoms, setTodaySymptoms] = useState<Symptom[]>([]);
   const [todayMoods, setTodayMoods] = useState<Mood[]>([]);
   const [userName, setUserName] = useState<string>('');
-  const [userInfo, setUserInfo] = useState<any>(null); // Store user info to check if viewing someone else
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [lastReminder, setLastReminder] = useState<Reminder | null>(null);
   const [reminderEnabled, setReminderEnabled] = useState<boolean>(false);
   const [generatingReminder, setGeneratingReminder] = useState<boolean>(false);
@@ -59,24 +62,24 @@ export default function HomeScreen() {
           const info = await getUserInfo();
           if (info) {
             setUserInfo(info);
-            // If viewing someone else's data, use their name
+            // Always use viewed user's name for viewer tabs
             if (info.userType === 'OTHER' && info.viewedUser) {
               const viewedName = info.viewedUser.name || 
                                 info.viewedUser.email?.split('@')[0] ||
-                                'there';
+                                'User';
               setUserName(viewedName);
             } else {
-              // Use viewer's own name
+              // Fallback
               const name = user.firstName || 
                           user.emailAddresses[0]?.emailAddress?.split('@')[0] ||
-                          'there';
+                          'User';
               setUserName(name);
             }
           } else {
             // Fallback to Clerk user name
             const name = user.firstName || 
                         user.emailAddresses[0]?.emailAddress?.split('@')[0] ||
-                        'there';
+                        'User';
             setUserName(name);
           }
         } catch (error) {
@@ -84,7 +87,7 @@ export default function HomeScreen() {
           // Fallback to Clerk user name
           const name = user.firstName || 
                       user.emailAddresses[0]?.emailAddress?.split('@')[0] ||
-                      'there';
+                      'User';
           setUserName(name);
         }
       }
@@ -124,7 +127,7 @@ export default function HomeScreen() {
     
     let cycleDay = 1;
     let phaseName = 'Cycle';
-    let phaseDay = 1; // Day within the current phase
+    let phaseDay = 1;
     let phaseEmoji = '😊';
     
     if (sortedPeriods.length > 0) {
@@ -140,14 +143,11 @@ export default function HomeScreen() {
       );
       cycleDay = daysSinceLastPeriod + 1;
       
-      // Calculate phase day based on current phase
       if (dayInfo.isPeriod && currentPeriodInfo) {
-        // On period - phase day is the day number within the period
         phaseName = 'Period';
         phaseDay = currentPeriodInfo.dayNumber || 1;
         phaseEmoji = '🩸';
       } else if (dayInfo.isFertile && predictions.fertileWindowStart) {
-        // In fertile/ovulation phase
         phaseName = 'Ovulation';
         phaseEmoji = '💕';
         const fertileStart = new Date(predictions.fertileWindowStart);
@@ -157,7 +157,6 @@ export default function HomeScreen() {
         );
         phaseDay = Math.max(1, daysSinceFertileStart + 1);
       } else if (dayInfo.isPMS && predictions.ovulationDate) {
-        // In luteal/PMS phase
         phaseName = 'Luteal';
         phaseEmoji = '😌';
         const ovulationDate = new Date(predictions.ovulationDate);
@@ -167,7 +166,6 @@ export default function HomeScreen() {
         );
         phaseDay = Math.max(1, daysSinceOvulation + 1);
       } else {
-        // In follicular phase
         phaseName = 'Follicular';
         phaseEmoji = '🌸';
         const daysSincePeriodEnd = Math.floor(
@@ -176,7 +174,6 @@ export default function HomeScreen() {
         phaseDay = Math.max(1, daysSincePeriodEnd + 1);
       }
     } else {
-      // No period data
       phaseName = 'Cycle';
       phaseDay = 1;
     }
@@ -194,61 +191,49 @@ export default function HomeScreen() {
     return diff > 0 ? diff : null;
   }, [predictions.nextPeriodDate, isOnPeriod]);
 
-  // Check if user has no period data
   const hasNoPeriodData = useMemo(() => {
     return periods.length === 0;
   }, [periods.length]);
 
-  // Phase-based gradient colors (white to phase color)
+  // Phase-based gradient colors
   const phaseGradientColors = useMemo((): [string, string, string] => {
     const phase = currentCycleInfo.phaseName;
     const dayInfo = currentCycleInfo.dayInfo;
     
-    // Check if it's the exact ovulation day (not just fertile window)
     if (dayInfo.isFertile && predictions.ovulationDate) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const ovDate = new Date(predictions.ovulationDate);
       ovDate.setHours(0, 0, 0, 0);
       if (today.getTime() === ovDate.getTime()) {
-        // Exact ovulation day - use blue
         return ['#FFFFFF', '#E3F2FD', '#BBDEFB'];
       }
     }
     
     switch (phase) {
       case 'Period':
-        // White to light reddish pink
         return ['#FFFFFF', '#FFE5ED', '#FFD1DC'];
       case 'Ovulation':
-        // Check if it's fertile window (yellow) or exact ovulation day (blue)
         if (dayInfo.isFertile && predictions.ovulationDate) {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           const ovDate = new Date(predictions.ovulationDate);
           ovDate.setHours(0, 0, 0, 0);
-          // If it's the exact ovulation day, use blue, otherwise yellow for fertile window
           if (today.getTime() === ovDate.getTime()) {
-            return ['#FFFFFF', '#E3F2FD', '#BBDEFB']; // Blue for ovulation day
+            return ['#FFFFFF', '#E3F2FD', '#BBDEFB'];
           } else {
-            return ['#FFFFFF', '#FFF9E6', '#FFECB3']; // Yellow for fertile window
+            return ['#FFFFFF', '#FFF9E6', '#FFECB3'];
           }
         }
-        // Default to yellow for fertile window if we can't determine
         return ['#FFFFFF', '#FFF9E6', '#FFECB3'];
       case 'Luteal':
-        // White to light purple/pink
         return ['#FFFFFF', '#F3E5F5', '#E1BEE7'];
       case 'Follicular':
-        // White to light green/blue (subtle)
         return ['#FFFFFF', '#F1F8F4', '#E8F5E9'];
       default:
-        // Default: white to very light gray
         return ['#FFFFFF', '#FAFAFA', '#F5F5F5'];
     }
   }, [currentCycleInfo.phaseName, currentCycleInfo.dayInfo, predictions.ovulationDate]);
-
-  // Removed circleDates - not needed for new design
 
   const userRef = useRef(user);
   const isSignedInRef = useRef(isSignedIn);
@@ -259,18 +244,15 @@ export default function HomeScreen() {
   }, [user, isSignedIn]);
 
   const loadData = useCallback(async () => {
-    // Use refs to get latest values without causing dependency issues
     const currentUser = userRef.current;
     const currentIsSignedIn = isSignedInRef.current;
     
-    // If not signed in or user not available, stop loading
     if (!currentIsSignedIn || !currentUser) {
       setLoading(false);
       loadingRef.current = false;
       return;
     }
     
-    // Prevent multiple simultaneous loads
     if (loadingRef.current) return;
     
     loadingRef.current = true;
@@ -301,46 +283,34 @@ export default function HomeScreen() {
       setLastReminder(reminderStatus.lastReminder);
     } catch (error: any) {
       if (error.response?.status !== 401) {
-        console.error('[Home] Error loading data:', error);
+        console.error('[Viewer Insights] Error loading data:', error);
       }
     } finally {
       setLoading(false);
       loadingRef.current = false;
     }
-  }, []); // Empty deps - use refs instead
+  }, []);
 
   useEffect(() => {
-    // Only load when user or sign-in status changes
     if (user && isSignedIn) {
       loadData();
     } else {
       setLoading(false);
       loadingRef.current = false;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, isSignedIn]);
-
-  useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener('periodsUpdated', () => {
-      if (userRef.current && isSignedInRef.current) {
-        loadData();
-      }
-    });
-    return () => subscription.remove();
-  }, [loadData]);
+  }, [user?.id, isSignedIn, loadData]);
 
   useFocusEffect(
     useCallback(() => {
       if (user && isSignedIn && !loadingRef.current) {
         loadData();
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, isSignedIn])
+    }, [user?.id, isSignedIn, loadData])
   );
 
   const handleGenerateReminder = useCallback(async () => {
     if (!settings?.reminderEnabled) {
-      Alert.alert('Reminders Disabled', 'Please enable reminders in your profile settings first.');
+      Alert.alert('Reminders Disabled', 'Reminders are disabled for this account.');
       return;
     }
 
@@ -349,9 +319,8 @@ export default function HomeScreen() {
       const response = await generateReminder();
       if (response.success && response.reminder) {
         setLastReminder(response.reminder);
-        Alert.alert('Reminder Generated', 'Your personalized reminder has been generated!');
+        Alert.alert('Reminder Generated', 'Reminder has been generated!');
       } else {
-        // Show the actual message from the backend
         const errorMessage = response.message || 'Could not generate a reminder at this time. Please try again later.';
         Alert.alert('Unable to Generate', errorMessage);
       }
@@ -363,53 +332,7 @@ export default function HomeScreen() {
     }
   }, [settings?.reminderEnabled]);
 
-  const handleLogPeriod = useCallback(async () => {
-    if (!user) return;
-
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const periodLength = settings?.averagePeriodLength || 5;
-      const endDate = new Date(today);
-      endDate.setDate(endDate.getDate() + periodLength - 1);
-      endDate.setHours(23, 59, 59, 999);
-
-      const overlapsExisting = periods.some((period) => {
-        const start = new Date(period.startDate);
-        start.setHours(0, 0, 0, 0);
-        const existingEnd = period.endDate
-          ? new Date(period.endDate)
-          : (() => {
-              const assumed = new Date(period.startDate);
-              assumed.setHours(0, 0, 0, 0);
-              assumed.setDate(assumed.getDate() + periodLength - 1);
-              return assumed;
-            })();
-        existingEnd.setHours(23, 59, 59, 999);
-        return today >= start && today <= existingEnd;
-      });
-
-      if (overlapsExisting) {
-        Alert.alert('Period Already Logged', 'Today is already part of a logged period.');
-        return;
-      }
-
-      await createPeriod({
-        startDate: today.toISOString(),
-        endDate: endDate.toISOString(),
-        flowLevel: 'medium',
-      });
-
-      Alert.alert('Success', 'Period logged successfully');
-      loadData();
-      DeviceEventEmitter.emit('periodsUpdated');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to log period');
-    }
-  }, [user, loadData, periods, settings?.averagePeriodLength]);
-
-  // Memoize tick marks to avoid recalculating on every render
+  // Memoize tick marks
   const tickMarks = useMemo(() => {
     return Array.from({ length: 30 }).map((_, i) => {
       const angle = (i / 30) * 2 * Math.PI - Math.PI / 2;
@@ -423,7 +346,6 @@ export default function HomeScreen() {
     });
   }, []);
 
-  // Memoize SVG offset calculation
   const svgOffset = useMemo(() => (width - SVG_SIZE) / 2, [width]);
 
   // Memoize ovulation arc
@@ -438,8 +360,8 @@ export default function HomeScreen() {
     
     if (daysUntilOv >= 0 && daysUntilOv < 30) {
       const arcRadius = 185;
-      const startAngle = -Math.PI / 3; // 1 o'clock
-      const endAngle = 0; // 3 o'clock
+      const startAngle = -Math.PI / 3;
+      const endAngle = 0;
       const startX = 200 + arcRadius * Math.cos(startAngle);
       const startY = 200 + arcRadius * Math.sin(startAngle);
       const endX = 200 + arcRadius * Math.cos(endAngle);
@@ -455,11 +377,10 @@ export default function HomeScreen() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // If on period, show current period arc
     if (isOnPeriod && currentPeriodInfo) {
       const arcRadius = 185;
-      const startAngle = (5 * Math.PI) / 6; // 7 o'clock
-      const endAngle = Math.PI; // 9 o'clock
+      const startAngle = (5 * Math.PI) / 6;
+      const endAngle = Math.PI;
       const startX = 200 + arcRadius * Math.cos(startAngle);
       const startY = 200 + arcRadius * Math.sin(startAngle);
       const endX = 200 + arcRadius * Math.cos(endAngle);
@@ -467,7 +388,6 @@ export default function HomeScreen() {
       return { startX, startY, endX, endY, arcRadius };
     }
     
-    // If not on period, show next period arc
     if (predictions.nextPeriodDate && !isOnPeriod) {
       const periodDate = new Date(predictions.nextPeriodDate);
       periodDate.setHours(0, 0, 0, 0);
@@ -475,8 +395,8 @@ export default function HomeScreen() {
       
       if (daysUntilPeriod >= 0 && daysUntilPeriod < 30) {
         const arcRadius = 185;
-        const startAngle = (5 * Math.PI) / 6; // 7 o'clock
-        const endAngle = Math.PI; // 9 o'clock
+        const startAngle = (5 * Math.PI) / 6;
+        const endAngle = Math.PI;
         const startX = 200 + arcRadius * Math.cos(startAngle);
         const startY = 200 + arcRadius * Math.sin(startAngle);
         const endX = 200 + arcRadius * Math.cos(endAngle);
@@ -486,8 +406,6 @@ export default function HomeScreen() {
     }
     return null;
   }, [isOnPeriod, currentPeriodInfo, predictions.nextPeriodDate]);
-
-  // Removed renderCircleDates - not used in new design
 
   if (loading) {
     return (
@@ -509,7 +427,7 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.greeting}>Welcome, {userName}! 👋</Text>
-          <Text style={styles.subtitle}>Track your cycle with ease</Text>
+          <Text style={styles.subtitle}>Viewing cycle information</Text>
         </View>
 
         {/* Center Circle */}
@@ -552,7 +470,7 @@ export default function HomeScreen() {
               />
             ))}
 
-            {/* Yellow arc for ovulation (top-right, 1-3 o'clock) */}
+            {/* Yellow arc for ovulation */}
             {ovulationArc && (
               <G key="ovulation-arc">
                 <Path
@@ -573,7 +491,7 @@ export default function HomeScreen() {
               </G>
             )}
 
-            {/* Pink arc for period (bottom-left, 7-9 o'clock) */}
+            {/* Pink arc for period */}
             {periodArc && (
               <Path
                 key={isOnPeriod ? "current-period-arc" : "next-period-arc"}
@@ -585,7 +503,7 @@ export default function HomeScreen() {
               />
             )}
 
-            {/* Phase Name at top (12 o'clock) - replaces "Periods" */}
+            {/* Phase Name at top */}
             <SvgText
               x="200"
               y="115"
@@ -599,7 +517,6 @@ export default function HomeScreen() {
 
             {/* Center content: Phase day or days left */}
             {hasNoPeriodData ? (
-              // Blank state when no period data
               <>
                 <SvgText
                   x="200"
@@ -623,7 +540,6 @@ export default function HomeScreen() {
                 </SvgText>
               </>
             ) : daysUntilPeriod !== null && daysUntilPeriod <= 3 && daysUntilPeriod > 0 ? (
-              // Show days until next period when 3 or less days
               <>
                 <SvgText
                   x="200"
@@ -647,7 +563,6 @@ export default function HomeScreen() {
                 </SvgText>
               </>
             ) : (
-              // Show current phase day
               <>
                 <SvgText
                   x="200"
@@ -672,7 +587,7 @@ export default function HomeScreen() {
               </>
             )}
 
-            {/* Next Period information - always shown */}
+            {/* Next Period information */}
             <SvgText
               x="200"
               y="255"
@@ -698,19 +613,11 @@ export default function HomeScreen() {
             </Svg>
           </View>
 
-          {/* Log Period Button - inside circle */}
-          <TouchableOpacity
-            style={styles.logPeriodButtonInside}
-            onPress={handleLogPeriod}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.logPeriodButtonTextInside}>Log Period</Text>
-          </TouchableOpacity>
-
           {/* Mascot (Giraffe) in bottom-right */}
           <View style={styles.mascotContainer}>
             <Text style={styles.mascotEmoji}>🦒</Text>
           </View>
+          {/* Note: Log Period button removed - view-only mode */}
         </View>
 
         {/* Cycle Phase Cards */}
@@ -721,7 +628,7 @@ export default function HomeScreen() {
               <View style={[styles.phaseCard, styles.periodCard]}>
                 <View style={styles.phaseCardContent}>
                   <Text style={styles.phaseCardTitle}>
-                    {isOnPeriod ? 'On Your Period' : 'Next Period'}
+                    {isOnPeriod ? 'On Period' : 'Next Period'}
                   </Text>
                   <Text style={styles.phaseCardDate}>
                     {isOnPeriod && currentPeriodInfo
@@ -803,7 +710,7 @@ export default function HomeScreen() {
             <View style={styles.remindersHeader}>
               <View style={styles.remindersHeaderLeft}>
                 <Ionicons name="notifications" size={24} color={Colors.primary} />
-                <Text style={styles.remindersTitle}>Your Reminder</Text>
+                <Text style={styles.remindersTitle}>Reminders</Text>
               </View>
               <TouchableOpacity
                 style={[styles.generateReminderButton, generatingReminder && styles.generateReminderButtonDisabled]}
@@ -842,24 +749,18 @@ export default function HomeScreen() {
               <View style={styles.reminderCardEmpty}>
                 <Ionicons name="notifications-outline" size={32} color={Colors.textSecondary} />
                 <Text style={styles.reminderEmptyText}>
-                  No reminder yet. Tap "Generate" to get a personalized reminder based on your cycle!
+                  No reminder yet. Tap "Generate" to get a personalized reminder based on the cycle!
                 </Text>
               </View>
             )}
           </View>
         )}
 
-        {/* Today's Insights */}
+        {/* Daily Insights Section - View Only */}
         <View style={styles.insightsContainer}>
           <View style={styles.insightsHeader}>
-            <Text style={styles.insightsTitle}>My daily insights</Text>
-            <TouchableOpacity
-              style={styles.logButton}
-              onPress={() => router.push('/log-symptoms')}
-            >
-              <Ionicons name="add" size={20} color={Colors.primary} />
-              <Text style={styles.logButtonText}>Log symptoms</Text>
-            </TouchableOpacity>
+            <Text style={styles.insightsTitle}>Daily insights</Text>
+            <Text style={styles.viewOnlyLabel}>View Only</Text>
           </View>
           
           {(todaySymptoms.length > 0 || todayMoods.length > 0) ? (
@@ -869,17 +770,9 @@ export default function HomeScreen() {
               contentContainerStyle={styles.insightsScrollContent}
             >
               {todayMoods.map((mood) => (
-                <TouchableOpacity
+                <View
                   key={`mood-${mood.id}`}
                   style={styles.insightCard}
-                  onPress={() => {
-                    router.push({
-                      pathname: '/(tabs)/chat',
-                      params: { 
-                        initialMessage: `I'm feeling ${mood.type} today. Can you help me understand this?`,
-                      },
-                    });
-                  }}
                 >
                   <View style={styles.insightIconContainer}>
                     <Text style={styles.insightEmoji}>😊</Text>
@@ -887,20 +780,12 @@ export default function HomeScreen() {
                   <Text style={styles.insightText} numberOfLines={2}>
                     {mood.type}
                   </Text>
-                </TouchableOpacity>
+                </View>
               ))}
               {todaySymptoms.map((symptom) => (
-                <TouchableOpacity
+                <View
                   key={`symptom-${symptom.id}`}
                   style={styles.insightCard}
-                  onPress={() => {
-                    router.push({
-                      pathname: '/(tabs)/chat',
-                      params: { 
-                        initialMessage: `I'm experiencing ${symptom.type} today. Can you help me?`,
-                      },
-                    });
-                  }}
                 >
                   <View style={styles.insightIconContainer}>
                     <Text style={styles.insightEmoji}>🔴</Text>
@@ -908,30 +793,27 @@ export default function HomeScreen() {
                   <Text style={styles.insightText} numberOfLines={2}>
                     {symptom.type}
                   </Text>
-                </TouchableOpacity>
+                </View>
               ))}
             </ScrollView>
           ) : (
-            <TouchableOpacity
-              style={styles.emptyInsightCard}
-              onPress={() => router.push('/log-symptoms')}
-            >
+            <View style={styles.emptyInsightCard}>
               <View style={styles.emptyInsightIcon}>
-                <Ionicons name="add" size={32} color={Colors.primary} />
+                <Ionicons name="information-circle-outline" size={32} color={Colors.textSecondary} />
               </View>
-              <Text style={styles.emptyInsightText}>Log your symptoms</Text>
-            </TouchableOpacity>
+              <Text style={styles.emptyInsightText}>No symptoms or moods logged for today</Text>
+            </View>
           )}
         </View>
 
         {/* Quick Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{predictions.cycleLength}</Text>
+            <Text style={styles.statValue}>{predictions.cycleLength || settings?.averageCycleLength || 28}</Text>
             <Text style={styles.statLabel}>Avg Cycle</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{predictions.periodLength}</Text>
+            <Text style={styles.statValue}>{predictions.periodLength || settings?.averagePeriodLength || 5}</Text>
             <Text style={styles.statLabel}>Avg Period</Text>
           </View>
           <View style={styles.statCard}>
@@ -997,7 +879,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   heartImage: {
-    width: 360, // 90% of 400 (circle size)
+    width: 360,
     height: 360,
     opacity: 0.7,
     tintColor: '#FFC1D6',
@@ -1005,26 +887,11 @@ const styles = StyleSheet.create({
   mascotContainer: {
     position: 'absolute',
     top: 125,
-    right: (width - 400) / 2 - 20, // Adjusted to be right of the circle
+    right: (width - 400) / 2 - 20,
     zIndex: 7,
   },
   mascotEmoji: {
     fontSize: 150,
-  },
-  logPeriodButtonInside: {
-    position: 'absolute',
-    top: 290, // Position below "Next Period" text, inside circle
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  logPeriodButtonTextInside: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.primary,
-    textDecorationLine: 'underline',
   },
   phaseCardsContainer: {
     flexDirection: 'row',
@@ -1047,13 +914,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   periodCard: {
-    backgroundColor: '#FFE5ED', // Light pink
+    backgroundColor: '#FFE5ED',
   },
   ovulationCard: {
-    backgroundColor: '#FFE8D6', // Light peach/orange
+    backgroundColor: '#FFE8D6',
   },
   fertilityCard: {
-    backgroundColor: '#E3F2FD', // Light blue
+    backgroundColor: '#E3F2FD',
   },
   phaseCardContent: {
     flex: 1,
@@ -1076,26 +943,6 @@ const styles = StyleSheet.create({
   phaseCardIconImage: {
     width: 40,
     height: 40,
-  },
-  symptomsContainer: {
-    padding: 20,
-    paddingTop: 0,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 12,
-  },
-  symptomItem: {
-    backgroundColor: Colors.surface,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  symptomText: {
-    fontSize: 14,
-    color: Colors.text,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -1140,19 +987,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: Colors.text,
   },
-  logButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  viewOnlyLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
     backgroundColor: Colors.surface,
-    borderRadius: 16,
-  },
-  logButtonText: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '600',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   insightsScrollContent: {
     gap: 12,
@@ -1189,6 +1031,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
     textAlign: 'center',
     fontWeight: '500',
+    textTransform: 'capitalize',
   },
   emptyInsightCard: {
     backgroundColor: Colors.white,
@@ -1212,6 +1055,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     fontWeight: '500',
+    textAlign: 'center',
   },
   remindersContainer: {
     paddingHorizontal: 20,

@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 
-export default function TabLayout() {
+export default function ViewerTabLayout() {
   return (
     <Tabs
       screenOptions={{
@@ -25,7 +25,7 @@ export default function TabLayout() {
         },
       }}>
       <Tabs.Screen
-        name="home"
+        name="insights"
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => (
@@ -45,9 +45,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="chat"
         options={{
-          title: 'Chat',
+          title: 'AI Coach',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble" size={size} color={color} />
+            <Ionicons name="chatbubbles" size={size} color={color} />
           ),
         }}
       />
@@ -56,10 +56,11 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
+            <Ionicons name="person-circle" size={size} color={color} />
           ),
         }}
       />
     </Tabs>
   );
 }
+

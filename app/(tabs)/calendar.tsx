@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   Dimensions,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -22,9 +23,11 @@ import {
   createPeriod,
   deletePeriod,
   getSymptoms,
+  getMoods,
   Period,
   UserSettings,
   Symptom,
+  Mood,
 } from '../../lib/api';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
 import { setClerkTokenGetter } from '../../lib/api';
@@ -56,7 +59,11 @@ function getPhaseInfoForDate(
       : new Date(lastPeriodStart.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000);
     lastPeriodEnd.setHours(0, 0, 0, 0);
 
-    const periodInfo = getPeriodDayInfo(date, periods);
+    const periodInfo = getPeriodDayInfo(
+      date,
+      periods,
+      predictions.periodLength || settings?.averagePeriodLength || 5
+    );
     if (dayInfo.isPeriod && periodInfo) {
       phaseName = 'Period';
       phaseDay = periodInfo.dayNumber;
@@ -90,7 +97,8 @@ export default function CalendarScreen() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedDateSymptoms, setSelectedDateSymptoms] = useState<Symptom[]>([]);
-  const [loadingSymptoms, setLoadingSymptoms] = useState(false);
+  const [selectedDateMoods, setSelectedDateMoods] = useState<Mood[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newPeriodDate, setNewPeriodDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -148,27 +156,29 @@ export default function CalendarScreen() {
     }
   }, []);
 
-  // Load symptoms for selected date
-  const loadSymptomsForDate = useCallback(async (date: Date) => {
+  // Load moods & symptoms for selected date
+  const loadLogsForDate = useCallback(async (date: Date) => {
     if (!user) return;
-    
-    setLoadingSymptoms(true);
+
+    setLoadingLogs(true);
     try {
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const symptoms = await getSymptoms(
-        startOfDay.toISOString(),
-        endOfDay.toISOString()
-      );
+      const [symptoms, moods] = await Promise.all([
+        getSymptoms(startOfDay.toISOString(), endOfDay.toISOString()).catch(() => []),
+        getMoods(startOfDay.toISOString(), endOfDay.toISOString()).catch(() => []),
+      ]);
       setSelectedDateSymptoms(symptoms);
+      setSelectedDateMoods(moods);
     } catch (error: any) {
-      console.error('[Calendar] Error loading symptoms:', error);
+      console.error('[Calendar] Error loading logs:', error);
       setSelectedDateSymptoms([]);
+      setSelectedDateMoods([]);
     } finally {
-      setLoadingSymptoms(false);
+      setLoadingLogs(false);
     }
   }, [user]);
 
@@ -257,8 +267,10 @@ export default function CalendarScreen() {
 
   const handleDatePress = useCallback((date: Date) => {
     setSelectedDate(date);
-    loadSymptomsForDate(date);
-  }, [loadSymptomsForDate]);
+    setSelectedDateSymptoms([]);
+    setSelectedDateMoods([]);
+    loadLogsForDate(date);
+  }, [loadLogsForDate]);
 
   const handleAddPeriod = useCallback(async (selectedDate?: Date) => {
     if (!user) return;
@@ -281,6 +293,27 @@ export default function CalendarScreen() {
       endDate.setDate(endDate.getDate() + periodLength - 1);
       endDate.setHours(23, 59, 59, 999);
 
+      // Prevent duplicate or overlapping period entries
+      const overlapsExisting = periods.some((period) => {
+        const start = new Date(period.startDate);
+        start.setHours(0, 0, 0, 0);
+        const existingEnd = period.endDate
+          ? new Date(period.endDate)
+          : (() => {
+              const assumed = new Date(period.startDate);
+              assumed.setHours(0, 0, 0, 0);
+              assumed.setDate(assumed.getDate() + periodLength - 1);
+              return assumed;
+            })();
+        existingEnd.setHours(23, 59, 59, 999);
+        return date >= start && date <= existingEnd;
+      });
+
+      if (overlapsExisting) {
+        Alert.alert('Period Already Logged', 'A period is already logged and in progress for this date.');
+        return;
+      }
+
       await createPeriod({
         startDate: date.toISOString(),
         endDate: endDate.toISOString(),
@@ -292,10 +325,11 @@ export default function CalendarScreen() {
       setSelectedDate(null);
       loadingDataRef.current = false;
       loadData();
+      DeviceEventEmitter.emit('periodsUpdated');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to log period');
     }
-  }, [user, newPeriodDate, settings, loadData]);
+  }, [user, newPeriodDate, settings, periods, loadData]);
 
   const handleDeletePeriod = useCallback(
     async (periodId: string) => {
@@ -311,6 +345,7 @@ export default function CalendarScreen() {
               setSelectedDate(null);
               loadingDataRef.current = false;
               loadData();
+              DeviceEventEmitter.emit('periodsUpdated');
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to delete period');
             }
@@ -352,6 +387,20 @@ export default function CalendarScreen() {
       return selectedDate >= start && selectedDate <= end;
     });
   }, [selectedDate, periods, settings]);
+
+  const selectedDatePeriodEnd = useMemo(() => {
+    if (!selectedDatePeriod) return null;
+    if (selectedDatePeriod.endDate) {
+      const explicit = new Date(selectedDatePeriod.endDate);
+      explicit.setHours(0, 0, 0, 0);
+      return explicit;
+    }
+    const fallbackLength = settings?.averagePeriodLength || 5;
+    const assumed = new Date(selectedDatePeriod.startDate);
+    assumed.setHours(0, 0, 0, 0);
+    assumed.setDate(assumed.getDate() + fallbackLength - 1);
+    return assumed;
+  }, [selectedDatePeriod, settings?.averagePeriodLength]);
 
   // Check if selected date is the first day of a period
   const isFirstDayOfPeriod = useMemo(() => {
@@ -512,31 +561,50 @@ export default function CalendarScreen() {
                   <Text style={styles.periodInfoText}>
                     Start: {new Date(selectedDatePeriod.startDate).toLocaleDateString()}
                   </Text>
-                  {selectedDatePeriod.endDate && (
+                  {selectedDatePeriodEnd && (
                     <Text style={styles.periodInfoText}>
-                      End: {new Date(selectedDatePeriod.endDate).toLocaleDateString()}
+                      End: {selectedDatePeriodEnd.toLocaleDateString()}
+                      {!selectedDatePeriod.endDate ? ' (estimated)' : ''}
                     </Text>
                   )}
                 </View>
               )}
 
-              {/* Symptoms */}
-              <View style={styles.symptomsContainer}>
-                <Text style={styles.symptomsTitle}>Symptoms</Text>
-                {loadingSymptoms ? (
+              {loadingLogs ? (
+                <View style={styles.loadingContainer}>
                   <ActivityIndicator size="small" color={Colors.primary} />
-                ) : selectedDateSymptoms.length > 0 ? (
-                  selectedDateSymptoms.map((symptom) => (
-                    <View key={symptom.id} style={styles.symptomItem}>
-                      <Text style={styles.symptomText}>
-                        {symptom.type} {symptom.severity ? `(Severity: ${symptom.severity}/5)` : ''}
-                      </Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.noSymptomsText}>No symptoms logged for this date</Text>
-                )}
-              </View>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.moodsContainer}>
+                    <Text style={styles.moodsTitle}>Moods</Text>
+                    {selectedDateMoods.length > 0 ? (
+                      selectedDateMoods.map((mood) => (
+                        <View key={mood.id} style={styles.symptomItem}>
+                          <Text style={styles.symptomText}>{mood.type}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.noSymptomsText}>No moods logged for this date</Text>
+                    )}
+                  </View>
+
+                  <View style={styles.symptomsContainer}>
+                    <Text style={styles.symptomsTitle}>Symptoms</Text>
+                    {selectedDateSymptoms.length > 0 ? (
+                      selectedDateSymptoms.map((symptom) => (
+                        <View key={symptom.id} style={styles.symptomItem}>
+                          <Text style={styles.symptomText}>
+                            {symptom.type} {symptom.severity ? `(Severity: ${symptom.severity}/5)` : ''}
+                          </Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.noSymptomsText}>No symptoms logged for this date</Text>
+                    )}
+                  </View>
+                </>
+              )}
 
               {/* Action Buttons */}
               <View style={styles.actionButtonsContainer}>
@@ -805,6 +873,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text,
     marginBottom: 4,
+  },
+  loadingContainer: {
+    marginVertical: 16,
+    alignItems: 'center',
+  },
+  moodsContainer: {
+    marginBottom: 16,
+  },
+  moodsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 12,
   },
   symptomsContainer: {
     marginBottom: 16,

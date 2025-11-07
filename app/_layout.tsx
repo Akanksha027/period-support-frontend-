@@ -2,6 +2,7 @@ import { ClerkProvider } from '@clerk/clerk-expo';
 import { tokenCache } from '@clerk/clerk-expo/token-cache';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import 'react-native-reanimated';
@@ -37,8 +38,9 @@ export default function RootLayout() {
         <Stack.Screen name="home" />
         <Stack.Screen name="home-for-other" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(viewer-tabs)" />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style={Platform.OS === 'ios' ? 'dark' : 'auto'} />
     </ClerkProvider>
   );
 }

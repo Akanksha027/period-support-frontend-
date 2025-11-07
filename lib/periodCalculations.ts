@@ -184,12 +184,25 @@ export function getDayInfo(
   const dayDate = new Date(date);
   dayDate.setHours(0, 0, 0, 0);
 
+  const inferredPeriodLength = Math.max(1, predictions?.periodLength || 5);
+
+  const resolvePeriodEnd = (period: Period) => {
+    if (period.endDate) {
+      const explicitEnd = new Date(period.endDate);
+      explicitEnd.setHours(0, 0, 0, 0);
+      return explicitEnd;
+    }
+    const assumedEnd = new Date(period.startDate);
+    assumedEnd.setHours(0, 0, 0, 0);
+    assumedEnd.setDate(assumedEnd.getDate() + inferredPeriodLength - 1);
+    return assumedEnd;
+  };
+
   // Check if it's an actual period day
   const isPeriod = periods.some((period) => {
     const start = new Date(period.startDate);
     start.setHours(0, 0, 0, 0);
-    const end = period.endDate ? new Date(period.endDate) : start;
-    end.setHours(0, 0, 0, 0);
+    const end = resolvePeriodEnd(period);
     return dayDate >= start && dayDate <= end;
   });
 
@@ -282,7 +295,11 @@ export function getDayInfo(
 /**
  * Get period day information
  */
-export function getPeriodDayInfo(date: Date, periods: Period[]): {
+export function getPeriodDayInfo(
+  date: Date,
+  periods: Period[],
+  fallbackPeriodLength = 5
+): {
   dayNumber: number;
   dayLabel: string;
   periodLength: number;
@@ -296,7 +313,14 @@ export function getPeriodDayInfo(date: Date, periods: Period[]): {
   const currentPeriod = periods.find((period) => {
     const start = new Date(period.startDate);
     start.setHours(0, 0, 0, 0);
-    const end = period.endDate ? new Date(period.endDate) : start;
+    const end = period.endDate
+      ? new Date(period.endDate)
+      : (() => {
+          const assumed = new Date(period.startDate);
+          assumed.setHours(0, 0, 0, 0);
+          assumed.setDate(assumed.getDate() + Math.max(1, fallbackPeriodLength) - 1);
+          return assumed;
+        })();
     end.setHours(0, 0, 0, 0);
     return dayDate >= start && dayDate <= end;
   });
@@ -307,7 +331,14 @@ export function getPeriodDayInfo(date: Date, periods: Period[]): {
 
   const startDate = new Date(currentPeriod.startDate);
   startDate.setHours(0, 0, 0, 0);
-  const endDate = currentPeriod.endDate ? new Date(currentPeriod.endDate) : startDate;
+  const endDate = currentPeriod.endDate
+    ? new Date(currentPeriod.endDate)
+    : (() => {
+        const assumed = new Date(currentPeriod.startDate);
+        assumed.setHours(0, 0, 0, 0);
+        assumed.setDate(assumed.getDate() + Math.max(1, fallbackPeriodLength) - 1);
+        return assumed;
+      })();
   endDate.setHours(0, 0, 0, 0);
 
   const diff = Math.floor((dayDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));

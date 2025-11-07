@@ -1,16 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { loginForOtherAPI } from '@/lib/api';
+import { useAuth } from '@clerk/clerk-expo';
+import { loginForOtherAPI, setClerkTokenGetter } from '@/lib/api';
 
 export default function LoginForOtherScreen() {
   const router = useRouter();
+  const { isSignedIn, getToken, userId } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
   const [otp, setOtp] = useState('');
   const [otpEmail, setOtpEmail] = useState('');
   const [tempToken, setTempToken] = useState<string | null>(null);
+
+  // Set up token getter for API calls
+  useEffect(() => {
+    if (getToken) {
+      setClerkTokenGetter(getToken);
+    }
+  }, [getToken]);
+
+  // Check if user is logged in
+  useEffect(() => {
+    if (!isSignedIn) {
+      Alert.alert(
+        'Authentication Required',
+        'You must be logged in to view someone else\'s account. Please log in first.',
+        [
+          {
+            text: 'Go to Login',
+            onPress: () => router.replace('/(auth)/sign-in'),
+          },
+        ]
+      );
+    }
+  }, [isSignedIn]);
 
   const handleVerifyCredentials = async () => {
     if (!email) {
@@ -61,8 +86,27 @@ export default function LoginForOtherScreen() {
       return;
     }
 
+    // Ensure user is logged in
+    if (!isSignedIn || !getToken) {
+      Alert.alert(
+        'Authentication Required',
+        'You must be logged in to complete this action. Please log in first.'
+      );
+      return;
+    }
+
     setLoading(true);
     try {
+      // Ensure token is available before making API calls
+      const token = await getToken();
+      if (!token) {
+        Alert.alert('Error', 'Authentication token not available. Please log in again.');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[Login For Other] User is logged in with Clerk ID:', userId);
+
       // Step 1: Verify OTP
       const verifyResponse = await loginForOtherAPI.verifyOTP(otpEmail, otp);
 
@@ -80,6 +124,12 @@ export default function LoginForOtherScreen() {
       // Generate a viewer identifier (using device info or timestamp)
       const viewerIdentifier = `device_${Date.now()}`;
 
+      console.log('[Login For Other] Completing login with token:', {
+        hasToken: !!token,
+        userId,
+        viewedEmail: otpEmail,
+      });
+
       const completeResponse = await loginForOtherAPI.completeLogin(
         otpEmail,
         verifyResponse.tempToken,
@@ -88,16 +138,15 @@ export default function LoginForOtherScreen() {
 
       if (completeResponse.success) {
         // Store viewer info for later use
-        console.log('Login completed:', completeResponse.viewer);
+        console.log('[Login For Other] Login completed:', completeResponse.viewer);
         
-        // OTP verified and OTHER user created successfully, navigate to tabs home
-        // The app will automatically detect userType=OTHER and show view-only mode
-        router.replace('/(tabs)/home');
+        // OTP verified and OTHER user created successfully, navigate to viewer tabs
+        router.replace('/(viewer-tabs)/insights');
       } else {
         Alert.alert('Error', completeResponse.error || 'Failed to complete login. Please try again.');
       }
     } catch (error: any) {
-      console.error('Verify OTP error:', error);
+      console.error('[Login For Other] Verify OTP error:', error);
       Alert.alert('Error', error?.response?.data?.error || 'Failed to verify OTP. Please try again.');
     } finally {
       setLoading(false);

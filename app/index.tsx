@@ -80,9 +80,9 @@ export default function Index() {
 
   // If user info is loaded
   if (userInfo) {
-    // If user is OTHER type, route to tabs (view-only mode)
+    // If user is OTHER type, route to viewer-tabs (view-only mode)
     if (userInfo.userType === 'OTHER') {
-      return <Redirect href="/(tabs)/home" />;
+      return <Redirect href="/(viewer-tabs)/insights" />;
     }
 
     // If user is SELF type

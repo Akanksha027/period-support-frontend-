@@ -270,6 +270,11 @@ export interface UserInfo {
   clerkId: string;
   userType: 'SELF' | 'OTHER';
   viewedUserId?: string | null;
+  viewedUser?: {
+    id: string;
+    email: string;
+    name: string | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
   settings?: UserSettings | null;
