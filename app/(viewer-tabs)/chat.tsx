@@ -16,18 +16,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import {
   chatWithAI,
-  setClerkTokenGetter,
   getUserInfo,
   getPeriods,
   getSettings,
   getSymptoms,
   getMoods,
-  UserInfo,
   Period,
   UserSettings,
   Symptom,
   Mood,
-} from '../../lib/api';
+  Reminder,
+  UserInfo,
+  getCurrentViewModeRecord,
+  setClerkTokenGetter,
+} from '@/lib/api';
+import { buildCacheKey, getCachedData, setCachedData } from '@/lib/cache';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { calculatePredictions, getDayInfo, CyclePredictions } from '../../lib/periodCalculations';
 
@@ -128,20 +131,58 @@ export default function ViewerChatScreen() {
   useEffect(() => {
     const loadUserInfo = async () => {
       try {
+        const viewModeRecord = getCurrentViewModeRecord();
+        const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
+          ? viewModeRecord?.viewedUserId ?? user?.id
+          : user?.id;
+        const cacheScope = buildCacheKey([
+          viewModeRecord?.mode ?? 'UNKNOWN',
+          scopeIdentifier ?? 'self',
+        ]);
+        const userInfoCacheKey = buildCacheKey(['viewer-chat-user-info', cacheScope]);
+
+        const cachedUserInfo = await getCachedData<typeof userInfo>(userInfoCacheKey);
+        if (cachedUserInfo !== undefined) {
+          setUserInfo(cachedUserInfo);
+        }
+
         const info = await getUserInfo();
         setUserInfo(info);
+        await setCachedData(userInfoCacheKey, info);
       } catch (error) {
         console.error('[Viewer Chat] Failed to load user info:', error);
       }
     };
 
     loadUserInfo();
-  }, []);
+  }, [user]);
 
   // Load cycle data for viewed user
   useEffect(() => {
     const loadViewerData = async () => {
       try {
+        const viewModeRecord = getCurrentViewModeRecord();
+        const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
+          ? viewModeRecord?.viewedUserId ?? user?.id
+          : user?.id;
+        const cacheScope = buildCacheKey([
+          viewModeRecord?.mode ?? 'UNKNOWN',
+          scopeIdentifier ?? 'self',
+        ]);
+
+        const periodsCacheKey = buildCacheKey(['viewer-chat-periods', cacheScope]);
+        const settingsCacheKey = buildCacheKey(['viewer-chat-settings', cacheScope]);
+
+        const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
+        if (cachedPeriods !== undefined) {
+          setPeriods(cachedPeriods);
+        }
+
+        const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
+        if (cachedSettings !== undefined) {
+          setSettings(cachedSettings);
+        }
+
         const [periodsData, settingsData] = await Promise.all([
           getPeriods().catch(() => []),
           getSettings().catch(() => null),
@@ -150,10 +191,36 @@ export default function ViewerChatScreen() {
         setPeriods(periodsData);
         setSettings(settingsData);
 
+        await setCachedData(periodsCacheKey, periodsData);
+        await setCachedData(settingsCacheKey, settingsData);
+
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const endOfDay = new Date(today);
         endOfDay.setHours(23, 59, 59, 999);
+
+        const symptomsCacheKey = buildCacheKey([
+          'viewer-chat-symptoms',
+          cacheScope,
+          today.toISOString(),
+          endOfDay.toISOString(),
+        ]);
+        const moodsCacheKey = buildCacheKey([
+          'viewer-chat-moods',
+          cacheScope,
+          today.toISOString(),
+          endOfDay.toISOString(),
+        ]);
+
+        const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
+        if (cachedSymptoms !== undefined) {
+          setTodaySymptoms(cachedSymptoms);
+        }
+
+        const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
+        if (cachedMoods !== undefined) {
+          setTodayMoods(cachedMoods);
+        }
 
         const [symptomsData, moodsData] = await Promise.all([
           getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
@@ -162,13 +229,16 @@ export default function ViewerChatScreen() {
 
         setTodaySymptoms(symptomsData);
         setTodayMoods(moodsData);
+
+        await setCachedData(symptomsCacheKey, symptomsData);
+        await setCachedData(moodsCacheKey, moodsData);
       } catch (error) {
         console.error('[Viewer Chat] Failed to load viewer cycle data:', error);
       }
     };
 
     loadViewerData();
-  }, []);
+  }, [user]);
 
   const predictions = useMemo<CyclePredictions>(() => {
     return calculatePredictions(periods, settings);

@@ -28,7 +28,9 @@ import {
   UserSettings,
   Symptom,
   Mood,
+  getCurrentViewModeRecord,
 } from '../../lib/api';
+import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
@@ -140,12 +142,37 @@ export default function CalendarScreen() {
     loadingDataRef.current = true;
     setLoading(true);
     try {
+      const viewModeRecord = getCurrentViewModeRecord();
+      const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
+        ? viewModeRecord?.viewedUserId ?? userRef.current?.id
+        : userRef.current?.id;
+      const cacheScope = buildCacheKey([
+        viewModeRecord?.mode ?? 'UNKNOWN',
+        scopeIdentifier ?? 'self',
+      ]);
+
+      const periodsCacheKey = buildCacheKey(['periods', cacheScope]);
+      const settingsCacheKey = buildCacheKey(['settings', cacheScope]);
+
+      const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
+      if (cachedPeriods !== undefined) {
+        setPeriods(cachedPeriods);
+      }
+
+      const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
+      if (cachedSettings !== undefined) {
+        setSettings(cachedSettings);
+      }
+
       const [periodsData, settingsData] = await Promise.all([
         getPeriods().catch(() => []),
         getSettings().catch(() => null),
       ]);
       setPeriods(periodsData);
       setSettings(settingsData);
+
+      await setCachedData(periodsCacheKey, periodsData);
+      await setCachedData(settingsCacheKey, settingsData);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Calendar] Error loading data:', error);
@@ -167,12 +194,47 @@ export default function CalendarScreen() {
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
+      const viewModeRecord = getCurrentViewModeRecord();
+      const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
+        ? viewModeRecord?.viewedUserId ?? user.id
+        : user.id;
+      const cacheScope = buildCacheKey([
+        viewModeRecord?.mode ?? 'UNKNOWN',
+        scopeIdentifier ?? 'self',
+      ]);
+
+      const symptomsCacheKey = buildCacheKey([
+        'calendar-symptoms',
+        cacheScope,
+        startOfDay.toISOString(),
+        endOfDay.toISOString(),
+      ]);
+      const moodsCacheKey = buildCacheKey([
+        'calendar-moods',
+        cacheScope,
+        startOfDay.toISOString(),
+        endOfDay.toISOString(),
+      ]);
+
+      const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
+      if (cachedSymptoms !== undefined) {
+        setSelectedDateSymptoms(cachedSymptoms);
+      }
+
+      const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
+      if (cachedMoods !== undefined) {
+        setSelectedDateMoods(cachedMoods);
+      }
+
       const [symptoms, moods] = await Promise.all([
         getSymptoms(startOfDay.toISOString(), endOfDay.toISOString()).catch(() => []),
         getMoods(startOfDay.toISOString(), endOfDay.toISOString()).catch(() => []),
       ]);
       setSelectedDateSymptoms(symptoms);
       setSelectedDateMoods(moods);
+
+      await setCachedData(symptomsCacheKey, symptoms);
+      await setCachedData(moodsCacheKey, moods);
     } catch (error: any) {
       console.error('[Calendar] Error loading logs:', error);
       setSelectedDateSymptoms([]);

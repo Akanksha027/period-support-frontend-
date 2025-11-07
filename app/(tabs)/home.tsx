@@ -17,7 +17,24 @@ import Svg, { Circle, G, Text as SvgText, Path, Line, Defs, LinearGradient as Sv
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../constants/Colors';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { getPeriods, getSettings, getSymptoms, getMoods, createPeriod, Period, UserSettings, Symptom, Mood, getReminderStatus, generateReminder, Reminder, getUserInfo, UserInfo } from '../../lib/api';
+import {
+  getPeriods,
+  getSettings,
+  getSymptoms,
+  getMoods,
+  createPeriod,
+  Period,
+  UserSettings,
+  Symptom,
+  Mood,
+  getReminderStatus,
+  generateReminder,
+  Reminder,
+  getUserInfo,
+  UserInfo,
+  getCurrentViewModeRecord,
+} from '../../lib/api';
+import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
@@ -262,33 +279,88 @@ export default function HomeScreen() {
     // Use refs to get latest values without causing dependency issues
     const currentUser = userRef.current;
     const currentIsSignedIn = isSignedInRef.current;
-    
+
     // If not signed in or user not available, stop loading
     if (!currentIsSignedIn || !currentUser) {
       setLoading(false);
       loadingRef.current = false;
       return;
     }
-    
+
     // Prevent multiple simultaneous loads
     if (loadingRef.current) return;
-    
+
     loadingRef.current = true;
     setLoading(true);
-    
+
     try {
+      const viewModeRecord = getCurrentViewModeRecord();
+      const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
+        ? viewModeRecord?.viewedUserId ?? currentUser.id
+        : currentUser.id;
+      const cacheScope = buildCacheKey([
+        viewModeRecord?.mode ?? 'UNKNOWN',
+        scopeIdentifier ?? 'self',
+      ]);
+
+      const periodsCacheKey = buildCacheKey(['periods', cacheScope]);
+      const settingsCacheKey = buildCacheKey(['settings', cacheScope]);
+
+      const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
+      if (cachedPeriods !== undefined) {
+        setPeriods(cachedPeriods);
+      }
+
+      const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
+      if (cachedSettings !== undefined) {
+        setSettings(cachedSettings);
+      }
+
       const [periodsData, settingsData] = await Promise.all([
         getPeriods().catch(() => []),
         getSettings().catch(() => null),
       ]);
-      
+
       setPeriods(periodsData);
       setSettings(settingsData);
+
+      await setCachedData(periodsCacheKey, periodsData);
+      await setCachedData(settingsCacheKey, settingsData);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const endOfDay = new Date(today);
       endOfDay.setHours(23, 59, 59, 999);
+
+      const symptomsCacheKey = buildCacheKey([
+        'symptoms',
+        cacheScope,
+        today.toISOString(),
+        endOfDay.toISOString(),
+      ]);
+      const moodsCacheKey = buildCacheKey([
+        'moods',
+        cacheScope,
+        today.toISOString(),
+        endOfDay.toISOString(),
+      ]);
+      const remindersCacheKey = buildCacheKey(['reminders', cacheScope]);
+
+      const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
+      if (cachedSymptoms !== undefined) {
+        setTodaySymptoms(cachedSymptoms);
+      }
+
+      const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
+      if (cachedMoods !== undefined) {
+        setTodayMoods(cachedMoods);
+      }
+
+      const cachedReminderStatus = await getCachedData<{ enabled: boolean; lastReminder: Reminder | null }>(remindersCacheKey);
+      if (cachedReminderStatus !== undefined) {
+        setReminderEnabled(cachedReminderStatus.enabled);
+        setLastReminder(cachedReminderStatus.lastReminder);
+      }
 
       const [symptoms, moods, reminderStatus] = await Promise.all([
         getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
@@ -299,6 +371,10 @@ export default function HomeScreen() {
       setTodayMoods(moods);
       setReminderEnabled(reminderStatus.enabled);
       setLastReminder(reminderStatus.lastReminder);
+
+      await setCachedData(symptomsCacheKey, symptoms);
+      await setCachedData(moodsCacheKey, moods);
+      await setCachedData(remindersCacheKey, reminderStatus);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Home] Error loading data:', error);

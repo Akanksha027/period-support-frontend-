@@ -21,6 +21,7 @@ export default function Index() {
   const [viewMode, setViewModeState] = useState<ViewMode | null>(null);
   const [modeReady, setModeReady] = useState(false);
   const [viewerAccessRevoked, setViewerAccessRevoked] = useState(false);
+  const [initialCheckComplete, setInitialCheckComplete] = useState(false);
 
   // Set up token getter
   useEffect(() => {
@@ -105,6 +106,7 @@ export default function Index() {
         if (!token) {
           console.log('[Index] checkUserType no token');
           setLoading(false);
+          setInitialCheckComplete(true);
           return;
         }
 
@@ -207,6 +209,7 @@ export default function Index() {
       } finally {
         console.log('[Index] checkUserType finished, clearing loading');
         setLoading(false);
+        setInitialCheckComplete(true);
       }
     };
 
@@ -214,13 +217,15 @@ export default function Index() {
       checkUserTypeAndOnboarding();
     } else if (isLoaded && !isSignedIn) {
       setLoading(false);
+      setInitialCheckComplete(true);
     } else if (viewerAccessRevoked) {
       setLoading(false);
+      setInitialCheckComplete(true);
     }
   }, [isLoaded, isSignedIn, user, primaryEmail, getToken, modeReady, viewMode, viewerAccessRevoked]);
 
   // Show loading while checking auth state and user type
-  if (!isLoaded || !modeReady || loading) {
+  if (!isLoaded || !modeReady || loading || !initialCheckComplete) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" />
