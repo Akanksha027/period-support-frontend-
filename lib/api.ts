@@ -40,40 +40,173 @@ const API_URL = resolveApiBase();
 
 // Helper function to get Clerk token and add to request
 let getClerkToken: (() => Promise<string | null>) | null = null;
-let currentViewMode: 'SELF' | 'OTHER' | null = null;
-const VIEW_MODE_STORAGE_KEY = 'VIEW_MODE_PREFERENCE';
+
+export type ViewMode = 'SELF' | 'OTHER';
+
+export interface ViewModeRecord {
+  email: string;
+  mode: ViewMode;
+  viewedUserId?: string | null;
+  viewedUserEmail?: string | null;
+  updatedAt: string;
+}
+
+type ViewModeMap = Record<string, ViewModeRecord>;
+
+let currentViewModeRecord: ViewModeRecord | null = null;
+
+const VIEW_MODE_STORAGE_KEY = 'VIEW_MODE_MAP_V1';
+const LEGACY_VIEW_MODE_KEY = 'VIEW_MODE_PREFERENCE';
 
 export function setClerkTokenGetter(tokenGetter: () => Promise<string | null>) {
   getClerkToken = tokenGetter;
 }
 
-export async function setViewMode(mode: 'SELF' | 'OTHER' | null) {
-  currentViewMode = mode;
+export function getCurrentViewMode(): ViewMode | null {
+  return currentViewModeRecord?.mode ?? null;
+}
+
+export function getCurrentViewModeRecord(): ViewModeRecord | null {
+  return currentViewModeRecord;
+}
+
+function normaliseEmail(email?: string | null): string | null {
+  if (!email) return null;
+  return email.trim().toLowerCase();
+}
+
+async function loadViewModeMap(): Promise<ViewModeMap> {
   try {
-    if (mode) {
-      await SecureStore.setItemAsync(VIEW_MODE_STORAGE_KEY, mode);
-    } else {
-      await SecureStore.deleteItemAsync(VIEW_MODE_STORAGE_KEY);
+    const stored = await SecureStore.getItemAsync(VIEW_MODE_STORAGE_KEY);
+    if (!stored) {
+      return {};
+    }
+    const parsed = JSON.parse(stored);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as ViewModeMap;
     }
   } catch (error) {
-    console.warn('[API] Failed to persist view mode:', error);
+    console.warn('[API] Failed to parse view mode map:', error);
+  }
+  return {};
+}
+
+async function persistViewModeMap(map: ViewModeMap) {
+  try {
+    await SecureStore.setItemAsync(VIEW_MODE_STORAGE_KEY, JSON.stringify(map));
+  } catch (error) {
+    console.warn('[API] Failed to persist view mode map:', error);
   }
 }
 
-export async function loadStoredViewMode(): Promise<'SELF' | 'OTHER' | null> {
+async function migrateLegacyViewMode(email: string): Promise<ViewModeRecord | null> {
   try {
-    const stored = await SecureStore.getItemAsync(VIEW_MODE_STORAGE_KEY);
-    if (stored === 'SELF' || stored === 'OTHER') {
-      currentViewMode = stored;
-      return stored;
-    }
-    currentViewMode = null;
-    return null;
+    const legacy = await SecureStore.getItemAsync(LEGACY_VIEW_MODE_KEY);
+    if (!legacy) return null;
+    const parsed = JSON.parse(legacy) as Omit<ViewModeRecord, 'email'> & { mode: ViewMode };
+    if (!parsed?.mode) return null;
+    const record: ViewModeRecord = {
+      email,
+      mode: parsed.mode,
+      viewedUserId: parsed.viewedUserId ?? null,
+      viewedUserEmail: parsed.viewedUserEmail ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    const map = await loadViewModeMap();
+    map[email] = record;
+    await persistViewModeMap(map);
+    await SecureStore.deleteItemAsync(LEGACY_VIEW_MODE_KEY);
+    return record;
   } catch (error) {
-    console.warn('[API] Failed to load view mode:', error);
-    currentViewMode = null;
+    console.warn('[API] Failed to migrate legacy view mode record:', error);
     return null;
   }
+}
+
+export async function loadStoredViewModeRecord(email: string): Promise<ViewModeRecord | null> {
+  const key = normaliseEmail(email);
+  if (!key) {
+    currentViewModeRecord = null;
+    return null;
+  }
+
+  const map = await loadViewModeMap();
+  let record: ViewModeRecord | null = map[key] ?? null;
+
+  if (!record) {
+    // Attempt legacy migration
+    record = await migrateLegacyViewMode(key);
+  }
+
+  if (record && (record.mode === 'SELF' || record.mode === 'OTHER')) {
+    currentViewModeRecord = record;
+    return record;
+  }
+
+  currentViewModeRecord = null;
+  return null;
+}
+
+export async function setViewMode(
+  mode: ViewMode | null,
+  options?: {
+    email?: string;
+    viewedUserId?: string | null;
+    viewedUserEmail?: string | null;
+    persist?: boolean;
+    forgetPersisted?: boolean;
+  }
+) {
+  const emailKey = normaliseEmail(options?.email);
+
+  if (!mode) {
+    currentViewModeRecord = null;
+
+    if (emailKey && options?.forgetPersisted) {
+      const map = await loadViewModeMap();
+      if (map[emailKey]) {
+        delete map[emailKey];
+        await persistViewModeMap(map);
+      }
+    }
+    return;
+  }
+
+  const record: ViewModeRecord = {
+    email: emailKey || currentViewModeRecord?.email || '',
+    mode,
+    viewedUserId: options?.viewedUserId ?? null,
+    viewedUserEmail: options?.viewedUserEmail ?? null,
+    updatedAt: new Date().toISOString(),
+  };
+
+  currentViewModeRecord = record;
+
+  if (emailKey && options?.persist !== false) {
+    const map = await loadViewModeMap();
+    map[emailKey] = record;
+    await persistViewModeMap(map);
+  }
+}
+
+export async function clearStoredViewMode(email: string) {
+  const key = normaliseEmail(email);
+  if (!key) return;
+  const map = await loadViewModeMap();
+  if (map[key]) {
+    delete map[key];
+    await persistViewModeMap(map);
+  }
+  if (currentViewModeRecord?.email === key) {
+    currentViewModeRecord = null;
+  }
+}
+
+export async function peekStoredViewModeRecord(email: string): Promise<ViewModeRecord | null> {
+  const key = normaliseEmail(email);
+  if (!key) return null;
+  const map = await loadViewModeMap();
+  return map[key] ?? null;
 }
 
 export const api = axios.create({
@@ -101,8 +234,8 @@ api.interceptors.request.use(
     }
 
     config.headers = config.headers || {};
-    if (currentViewMode) {
-      config.headers['X-View-Mode'] = currentViewMode;
+    if (currentViewModeRecord?.mode) {
+      config.headers['X-View-Mode'] = currentViewModeRecord.mode;
     } else if (config.headers['X-View-Mode']) {
       delete config.headers['X-View-Mode'];
     }

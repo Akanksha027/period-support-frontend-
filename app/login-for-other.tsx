@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@clerk/clerk-expo';
-import { loginForOtherAPI, setClerkTokenGetter, setViewMode } from '@/lib/api';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { loginForOtherAPI, setClerkTokenGetter, setViewMode, loadStoredViewModeRecord, peekStoredViewModeRecord } from '@/lib/api';
 
 export default function LoginForOtherScreen() {
   const router = useRouter();
   const { isSignedIn, getToken, userId } = useAuth();
+  const { user } = useUser();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
   const [otp, setOtp] = useState('');
   const [otpEmail, setOtpEmail] = useState('');
   const [tempToken, setTempToken] = useState<string | null>(null);
+
+  const viewerEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? null;
 
   // Set up token getter for API calls
   useEffect(() => {
@@ -37,6 +40,18 @@ export default function LoginForOtherScreen() {
     }
   }, [isSignedIn]);
 
+  useEffect(() => {
+    const redirectIfStored = async () => {
+      if (!isSignedIn || !viewerEmail) return;
+      const stored = await loadStoredViewModeRecord(viewerEmail);
+      if (stored?.mode === 'OTHER') {
+        router.replace('/(viewer-tabs)/insights');
+      }
+    };
+
+    redirectIfStored();
+  }, [isSignedIn, viewerEmail, router]);
+
   const handleVerifyCredentials = async () => {
     if (!email) {
       Alert.alert('Error', 'Please enter email address');
@@ -45,6 +60,23 @@ export default function LoginForOtherScreen() {
 
     setLoading(true);
     try {
+      if (viewerEmail) {
+        const storedViewerMode = await peekStoredViewModeRecord(viewerEmail);
+        if (storedViewerMode && storedViewerMode.mode !== 'OTHER') {
+          Alert.alert(
+            'Access Restricted',
+            'This account is configured for personal tracking. Please sign in with a different email to view someone else’s data.'
+          );
+          setLoading(false);
+          return;
+        }
+        if (storedViewerMode?.mode === 'OTHER') {
+          router.replace('/(viewer-tabs)/insights');
+          setLoading(false);
+          return;
+        }
+      }
+
       // Verify the email exists in the system
       const verifyResponse = await loginForOtherAPI.verifyCredentials(email);
 
@@ -140,8 +172,20 @@ export default function LoginForOtherScreen() {
         // Store viewer info for later use
         console.log('[Login For Other] Login completed:', completeResponse.viewer);
 
-              await setViewMode('OTHER');
-        
+        if (viewerEmail) {
+          await setViewMode('OTHER', {
+            email: viewerEmail,
+            viewedUserId: completeResponse.viewer?.viewedUserId || completeResponse.selfUser?.id || null,
+            viewedUserEmail: completeResponse.viewer?.viewedUserEmail || completeResponse.selfUser?.email || otpEmail,
+            persist: true,
+          });
+        } else {
+          await setViewMode('OTHER', {
+            viewedUserId: completeResponse.viewer?.viewedUserId || completeResponse.selfUser?.id || null,
+            viewedUserEmail: completeResponse.viewer?.viewedUserEmail || completeResponse.selfUser?.email || otpEmail,
+          });
+        }
+
         // OTP verified and OTHER user created successfully, navigate to viewer tabs
         router.replace('/(viewer-tabs)/insights');
       } else {

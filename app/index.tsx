@@ -7,8 +7,9 @@ import {
   getSettings,
   setClerkTokenGetter,
   UserInfo,
-  loadStoredViewMode,
+  loadStoredViewModeRecord,
   setViewMode,
+  ViewMode,
 } from '../lib/api';
 
 export default function Index() {
@@ -17,7 +18,7 @@ export default function Index() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
-  const [viewMode, setViewModeState] = useState<'SELF' | 'OTHER' | null>(null);
+  const [viewMode, setViewModeState] = useState<ViewMode | null>(null);
   const [modeReady, setModeReady] = useState(false);
   const [viewerAccessRevoked, setViewerAccessRevoked] = useState(false);
 
@@ -28,31 +29,71 @@ export default function Index() {
     }
   }, [getToken]);
 
+  const primaryEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? null;
+
   useEffect(() => {
     const initMode = async () => {
-      const stored = await loadStoredViewMode();
-      if (stored) {
-        await setViewMode(stored);
-        setViewModeState(stored);
-      } else {
+      if (!isLoaded) {
+        console.log('[Index] initMode skipped because auth not loaded');
+        return;
+      }
+
+      try {
+        if (!isSignedIn || !user) {
+          await setViewMode(null);
+          setViewModeState(null);
+          console.log('[Index] initMode cleared mode because not signed in or user missing');
+          return;
+        }
+
+        const email = primaryEmail;
+
+        if (!email) {
+          await setViewMode(null);
+          setViewModeState(null);
+          console.log('[Index] initMode cleared mode because email missing');
+          return;
+        }
+
+        const stored = await loadStoredViewModeRecord(email);
+        if (stored) {
+          console.log('[Index] initMode loaded stored mode', stored.mode);
+          setViewModeState(stored.mode);
+        } else {
+          await setViewMode(null);
+          setViewModeState(null);
+          console.log('[Index] initMode no stored mode, defaulting null');
+        }
+      } catch (error) {
+        console.error('[Index] Failed to initialise view mode:', error);
         await setViewMode(null);
         setViewModeState(null);
+      } finally {
+        setModeReady(true);
       }
-      setModeReady(true);
     };
 
     initMode();
-  }, []);
+  }, [isLoaded, isSignedIn, user, primaryEmail]);
 
   // Check user type and onboarding status
   useEffect(() => {
     const checkUserTypeAndOnboarding = async () => {
       if (!isLoaded || !isSignedIn || !user || !getToken || !modeReady || viewerAccessRevoked) {
+        console.log('[Index] checkUserType early return', {
+          isLoaded,
+          isSignedIn,
+          hasUser: !!user,
+          hasTokenGetter: !!getToken,
+          modeReady,
+          viewerAccessRevoked,
+        });
         setLoading(false);
         return;
       }
 
       if (viewMode === null) {
+        console.log('[Index] checkUserType viewMode null -> showing choose login');
         setUserInfo(null);
         setHasCompletedOnboarding(false);
         setLoading(false);
@@ -62,27 +103,40 @@ export default function Index() {
       try {
         const token = await getToken();
         if (!token) {
+          console.log('[Index] checkUserType no token');
           setLoading(false);
           return;
         }
 
         const info = await getUserInfo();
         const activeMode = viewMode;
+        console.log('[Index] checkUserType fetched user info', {
+          activeMode,
+          apiUserType: info?.userType,
+          hasViewedUser: !!info?.viewedUser,
+        });
 
         if (activeMode === 'OTHER') {
-          if (info.userType !== 'OTHER' || !info.viewedUser) {
+          if (!info || info.userType !== 'OTHER' || !info.viewedUser || !primaryEmail) {
             Alert.alert(
               'Access Removed',
               'The account you were viewing is no longer sharing cycle data.'
             );
-            await setViewMode(null);
+            await setViewMode(null, { email: primaryEmail, forgetPersisted: true });
             setViewModeState(null);
             setViewerAccessRevoked(true);
             setUserInfo(null);
             return;
           }
 
-          await setViewMode('OTHER');
+          if (primaryEmail) {
+            await setViewMode('OTHER', {
+              email: primaryEmail,
+              viewedUserId: info.viewedUser.id,
+              viewedUserEmail: info.viewedUser.email,
+              persist: true,
+            });
+          }
           setViewModeState('OTHER');
           setUserInfo(info);
           setHasCompletedOnboarding(true);
@@ -90,36 +144,50 @@ export default function Index() {
         }
 
         if (info) {
-          if (info.userType === 'OTHER' && info.viewedUser) {
-            await setViewMode('OTHER');
+          if (info.userType === 'OTHER' && info.viewedUser && primaryEmail) {
+            await setViewMode('OTHER', {
+              email: primaryEmail,
+              viewedUserId: info.viewedUser.id,
+              viewedUserEmail: info.viewedUser.email,
+              persist: true,
+            });
             setViewModeState('OTHER');
             setUserInfo(info);
             setHasCompletedOnboarding(true);
             return;
           }
 
-          await setViewMode('SELF');
+          if (primaryEmail) {
+            await setViewMode('SELF', { email: primaryEmail, persist: true });
+          } else {
+            await setViewMode('SELF');
+          }
           setViewModeState('SELF');
           setUserInfo(info);
 
           const settings = await getSettings();
           const hasOnboarding = settings?.birthYear || settings?.lastPeriodDate;
           setHasCompletedOnboarding(!!hasOnboarding);
+        } else if (primaryEmail) {
+          await setViewMode(null, { email: primaryEmail, forgetPersisted: true });
+          setViewModeState(null);
+          setUserInfo(null);
         } else {
           await setViewMode(null);
           setViewModeState(null);
           setUserInfo(null);
         }
       } catch (error: any) {
-        if (viewMode === 'OTHER' && error?.response?.status === 404) {
+        if (viewMode === 'OTHER' && error?.response?.status === 404 && primaryEmail) {
           Alert.alert(
             'Access Removed',
             'The account you were viewing is no longer sharing cycle data.'
           );
-          await setViewMode(null);
+          await setViewMode(null, { email: primaryEmail, forgetPersisted: true });
           setViewModeState(null);
           setViewerAccessRevoked(true);
           setUserInfo(null);
+          console.log('[Index] checkUserType OTHER revoked');
           return;
         }
 
@@ -128,10 +196,16 @@ export default function Index() {
           'Let’s confirm your login type',
           'Please choose whether you are logging in for yourself or someone else.'
         );
-        await setViewMode(null);
+        if (primaryEmail) {
+          await setViewMode(null, { email: primaryEmail, forgetPersisted: true });
+        } else {
+          await setViewMode(null);
+        }
         setViewModeState(null);
         setUserInfo(null);
+        console.log('[Index] checkUserType caught error, forcing choose login');
       } finally {
+        console.log('[Index] checkUserType finished, clearing loading');
         setLoading(false);
       }
     };
@@ -143,7 +217,7 @@ export default function Index() {
     } else if (viewerAccessRevoked) {
       setLoading(false);
     }
-  }, [isLoaded, isSignedIn, user, getToken, modeReady, viewMode, viewerAccessRevoked]);
+  }, [isLoaded, isSignedIn, user, primaryEmail, getToken, modeReady, viewMode, viewerAccessRevoked]);
 
   // Show loading while checking auth state and user type
   if (!isLoaded || !modeReady || loading) {

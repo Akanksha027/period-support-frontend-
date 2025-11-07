@@ -2,15 +2,61 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter, Redirect } from 'expo-router';
 import { useUser, useAuth } from '@clerk/clerk-expo';
-import { api, setViewMode } from '@/lib/api';
+import { api, setViewMode, loadStoredViewModeRecord, ViewMode } from '@/lib/api';
 
 export default function ChooseLoginTypeScreen() {
   const router = useRouter();
   const { user, isLoaded: userLoaded } = useUser();
   const { isSignedIn, isLoaded: authLoaded, getToken } = useAuth();
+  const [checkingSavedMode, setCheckingSavedMode] = React.useState(true);
+
+  const primaryEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? null;
+
+  React.useEffect(() => {
+    const redirectIfKnown = async () => {
+      console.log('[ChooseLoginType] redirect check start', {
+        isSignedIn,
+        hasUser: !!user,
+        primaryEmail,
+      });
+
+      if (!isSignedIn || !user || !primaryEmail) {
+        console.log('[ChooseLoginType] no stored mode because missing auth/user/email');
+        setCheckingSavedMode(false);
+        return;
+      }
+
+      const stored = await loadStoredViewModeRecord(primaryEmail);
+      console.log('[ChooseLoginType] stored mode record', stored);
+      const mode = stored?.mode as ViewMode | null;
+      const storedViewedUserId = stored?.viewedUserId;
+
+      if (mode === 'SELF') {
+        console.log('[ChooseLoginType] redirecting to self tabs');
+        router.replace('/(tabs)/home');
+        return;
+      }
+
+      if (mode === 'OTHER' && storedViewedUserId) {
+        console.log('[ChooseLoginType] redirecting to viewer tabs');
+        router.replace('/(viewer-tabs)/insights');
+        return;
+      }
+
+      console.log('[ChooseLoginType] no stored mode, showing options');
+      setCheckingSavedMode(false);
+    };
+
+    redirectIfKnown();
+  }, [isSignedIn, user, primaryEmail, router]);
 
   // Show loading while checking auth state
-  if (!authLoaded || !userLoaded) {
+  if (!authLoaded || !userLoaded || checkingSavedMode) {
+    console.log('[ChooseLoginType] waiting', {
+      authLoaded,
+      userLoaded,
+      checkingSavedMode,
+    });
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" />
@@ -24,7 +70,6 @@ export default function ChooseLoginTypeScreen() {
   }
 
   const handleLoginForSelf = async () => {
-    await setViewMode('SELF');
     // Check if user has completed onboarding
     // If not, redirect to onboarding screen
     try {
@@ -34,6 +79,8 @@ export default function ChooseLoginTypeScreen() {
         return;
       }
 
+      const email = primaryEmail;
+
       // Get token from auth
       const token = await getToken();
       if (!token) {
@@ -42,7 +89,6 @@ export default function ChooseLoginTypeScreen() {
         return;
       }
 
-      const email = user.emailAddresses[0]?.emailAddress;
       const clerkId = user.id;
 
       // Log for debugging
@@ -70,6 +116,12 @@ export default function ChooseLoginTypeScreen() {
           const data = response.data;
           // Check if user has completed onboarding (has birthYear or lastPeriodDate)
           const hasCompletedOnboarding = data.settings?.birthYear || data.settings?.lastPeriodDate;
+
+          if (email) {
+            await setViewMode('SELF', { email, persist: true });
+          } else {
+            await setViewMode('SELF');
+          }
           
           if (hasCompletedOnboarding) {
             router.replace('/(tabs)/home');
@@ -84,16 +136,31 @@ export default function ChooseLoginTypeScreen() {
         // 401 or 404 means user doesn't have settings yet (not completed onboarding)
         // This is expected for new users
         if (apiError?.response?.status === 401 || apiError?.response?.status === 404) {
+          if (email) {
+            await setViewMode('SELF', { email, persist: true });
+          } else {
+            await setViewMode('SELF');
+          }
           router.replace('/onboarding');
         } else {
           // Other errors, log and redirect to onboarding
           console.error('Error checking onboarding status:', apiError);
+          if (email) {
+            await setViewMode('SELF', { email, persist: true });
+          } else {
+            await setViewMode('SELF');
+          }
           router.replace('/onboarding');
         }
       }
     } catch (error) {
       console.error('Error in handleLoginForSelf:', error);
       // On error, go to onboarding to be safe
+      if (primaryEmail) {
+        await setViewMode('SELF', { email: primaryEmail, persist: true });
+      } else {
+        await setViewMode('SELF');
+      }
       router.replace('/onboarding');
     }
   };

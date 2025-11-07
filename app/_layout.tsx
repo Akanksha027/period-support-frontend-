@@ -30,14 +30,13 @@ export default function RootLayout() {
     <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="auth" />
-        <Stack.Screen name="choose-login-type" />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="choose-login-type" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login-for-other" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="home" />
         <Stack.Screen name="home-for-other" />
-        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(viewer-tabs)" />
       </Stack>
       <StatusBar style={Platform.OS === 'ios' ? 'dark' : 'auto'} />
