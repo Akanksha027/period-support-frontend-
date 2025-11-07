@@ -31,9 +31,10 @@ import {
   getCurrentViewModeRecord,
 } from '../../lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
-import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
+import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate } from '../../lib/periodCalculations';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
+import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -140,7 +141,9 @@ export default function CalendarScreen() {
     }
 
     loadingDataRef.current = true;
-    setLoading(true);
+
+    let showSpinner = true;
+
     try {
       const viewModeRecord = getCurrentViewModeRecord();
       const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
@@ -157,12 +160,16 @@ export default function CalendarScreen() {
       const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
       if (cachedPeriods !== undefined) {
         setPeriods(cachedPeriods);
+        showSpinner = false;
       }
 
       const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
       if (cachedSettings !== undefined) {
         setSettings(cachedSettings);
+        showSpinner = false;
       }
+
+      setLoading(showSpinner);
 
       const [periodsData, settingsData] = await Promise.all([
         getPeriods().catch(() => []),
@@ -187,6 +194,7 @@ export default function CalendarScreen() {
   const loadLogsForDate = useCallback(async (date: Date) => {
     if (!user) return;
 
+    let showSpinner = true;
     setLoadingLogs(true);
     try {
       const startOfDay = new Date(date);
@@ -219,11 +227,17 @@ export default function CalendarScreen() {
       const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
       if (cachedSymptoms !== undefined) {
         setSelectedDateSymptoms(cachedSymptoms);
+        showSpinner = false;
       }
 
       const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
       if (cachedMoods !== undefined) {
         setSelectedDateMoods(cachedMoods);
+        showSpinner = false;
+      }
+
+      if (!showSpinner) {
+        setLoadingLogs(false);
       }
 
       const [symptoms, moods] = await Promise.all([
@@ -284,45 +298,9 @@ export default function CalendarScreen() {
 
   const getDayStatus = useCallback(
     (date: Date) => {
-      const dayInfo = getDayInfo(date, periods, predictions);
-
-      // Check if it's an actual period day
-      const isPeriodDay = periods.some((period) => {
-        const start = new Date(period.startDate);
-        start.setHours(0, 0, 0, 0);
-        const end = period.endDate
-          ? new Date(period.endDate)
-          : new Date(start.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000 - 1);
-        end.setHours(23, 59, 59, 999);
-        return date >= start && date <= end;
-      });
-
-      if (isPeriodDay) {
-        return { type: 'period', color: '#FF6B9D' }; // Red
-      }
-
-      // Check if it's ovulation day first (most specific)
-      if (predictions.ovulationDate && dayInfo.isFertile) {
-        const dateTime = date.getTime();
-        const ovDate = new Date(predictions.ovulationDate);
-        ovDate.setHours(0, 0, 0, 0);
-        const ovTime = ovDate.getTime();
-        // Check if this date matches the ovulation date exactly
-        if (Math.abs(dateTime - ovTime) < 24 * 60 * 60 * 1000) {
-          return { type: 'ovulation', color: '#4A90E2' }; // Blue
-        }
-      }
-
-      // Check if it's in the fertility window (but not ovulation day)
-      if (dayInfo.phase === 'fertile' || dayInfo.isFertile) {
-        return { type: 'fertile', color: '#FFD93D' }; // Yellow
-      }
-
-      if (dayInfo.phase === 'predicted_period') {
-        return { type: 'predicted', color: '#66BB6A' }; // Green
-      }
-
-      return { type: 'normal', color: Colors.border };
+      const detail = getPhaseDetailsForDate(date, periods, predictions, settings);
+      const meta = PHASE_PALETTE[detail.phase];
+      return { phase: detail.phase, color: meta.color, isPredicted: detail.isPredicted };
     },
     [periods, predictions, settings]
   );
@@ -531,6 +509,8 @@ export default function CalendarScreen() {
 
             const status = getDayStatus(date);
             const isToday = date.toDateString() === new Date().toDateString();
+            const backgroundColor = `${status.color}${status.isPredicted ? '22' : '66'}`;
+            const borderColor = `${status.color}${status.isPredicted ? '33' : 'AA'}`;
 
             return (
               <TouchableOpacity
@@ -538,10 +518,7 @@ export default function CalendarScreen() {
                 style={[
                   styles.dayCell,
                   isToday && styles.todayCell,
-                  status.type === 'period' && styles.periodCell,
-                  status.type === 'fertile' && styles.fertileCell,
-                  status.type === 'ovulation' && styles.ovulationCell,
-                  status.type === 'predicted' && styles.predictedCell,
+                  { backgroundColor, borderColor },
                 ]}
                 onPress={() => handleDatePress(date)}
               >
@@ -549,8 +526,7 @@ export default function CalendarScreen() {
                   style={[
                     styles.dayText,
                     isToday && styles.todayText,
-                    status.type === 'period' && styles.periodText,
-                    (status.type === 'fertile' || status.type === 'ovulation' || status.type === 'predicted') && styles.coloredText,
+                    !status.isPredicted && styles.dayTextOnPhase,
                   ]}
                 >
                   {date.getDate()}
@@ -562,21 +538,18 @@ export default function CalendarScreen() {
 
         {/* Legend */}
         <View style={styles.legend}>
+          {(['menstrual', 'follicular', 'ovulation', 'luteal'] as PhaseKey[]).map((phaseKey) => {
+            const palette = PHASE_PALETTE[phaseKey];
+            return (
+              <View key={phaseKey} style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: palette.color }]} />
+                <Text style={styles.legendText}>{palette.shortLabel}</Text>
+              </View>
+            );
+          })}
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#FF6B9D' }]} />
-            <Text style={styles.legendText}>Period</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#FFD93D' }]} />
-            <Text style={styles.legendText}>Fertility</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#4A90E2' }]} />
-            <Text style={styles.legendText}>Ovulation</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#66BB6A' }]} />
-            <Text style={styles.legendText}>Predicted</Text>
+            <View style={[styles.legendColor, { backgroundColor: '#999999' }]} />
+            <Text style={styles.legendText}>Predicted tint</Text>
           </View>
         </View>
       </ScrollView>
@@ -814,34 +787,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     position: 'relative',
+    borderRadius: 10,
+    marginVertical: 3,
   },
   todayCell: {
     borderColor: Colors.primary,
     borderWidth: 2,
   },
-  periodCell: {
-    backgroundColor: '#FF6B9D', // Red
-  },
-  fertileCell: {
-    backgroundColor: '#FFD93D', // Yellow
-  },
-  ovulationCell: {
-    backgroundColor: '#4A90E2', // Blue
-  },
-  predictedCell: {
-    backgroundColor: '#66BB6A', // Green
-  },
   dayText: {
     fontSize: 14,
     color: Colors.text,
+    fontWeight: '500',
   },
   todayText: {
     fontWeight: 'bold',
     color: Colors.primary,
-  },
-  periodText: {
-    color: Colors.white,
-    fontWeight: '600',
   },
   coloredText: {
     color: Colors.text,
@@ -1057,5 +1017,9 @@ const styles = StyleSheet.create({
   confirmButtonText: {
     color: Colors.white,
     fontWeight: '600',
+  },
+  dayTextOnPhase: {
+    color: Colors.white,
+    fontWeight: '700',
   },
 });

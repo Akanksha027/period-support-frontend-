@@ -35,10 +35,19 @@ import {
   getCurrentViewModeRecord,
 } from '../../lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
-import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
+import {
+  calculatePredictions,
+  getDayInfo,
+  getPeriodDayInfo,
+  CyclePredictions,
+  getPhaseNote,
+  getPhaseDetailsForDate,
+} from '../../lib/periodCalculations';
+import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
+import PhaseGuide from '../../components/PhaseGuide';
 
 const { width } = Dimensions.get('window');
 const CIRCLE_RADIUS = 155;
@@ -133,73 +142,41 @@ export default function HomeScreen() {
   const currentCycleInfo = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const phaseDetail = getPhaseDetailsForDate(today, periods, predictions, settings);
+    const metadata = PHASE_PALETTE[phaseDetail.phase];
     const dayInfo = getDayInfo(today, periods, predictions);
-    
+
     const sortedPeriods = [...periods].sort(
       (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
     );
-    
+
     let cycleDay = 1;
-    let phaseName = 'Cycle';
-    let phaseDay = 1; // Day within the current phase
-    let phaseEmoji = '😊';
-    
     if (sortedPeriods.length > 0) {
       const lastPeriodStart = new Date(sortedPeriods[0].startDate);
       lastPeriodStart.setHours(0, 0, 0, 0);
-      const lastPeriodEnd = sortedPeriods[0].endDate 
-        ? new Date(sortedPeriods[0].endDate)
-        : new Date(lastPeriodStart.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000);
-      lastPeriodEnd.setHours(0, 0, 0, 0);
-      
       const daysSinceLastPeriod = Math.floor(
         (today.getTime() - lastPeriodStart.getTime()) / (1000 * 60 * 60 * 24)
       );
       cycleDay = daysSinceLastPeriod + 1;
-      
-      // Calculate phase day based on current phase
-      if (dayInfo.isPeriod && currentPeriodInfo) {
-        // On period - phase day is the day number within the period
-        phaseName = 'Period';
-        phaseDay = currentPeriodInfo.dayNumber || 1;
-        phaseEmoji = '🩸';
-      } else if (dayInfo.isFertile && predictions.fertileWindowStart) {
-        // In fertile/ovulation phase
-        phaseName = 'Ovulation';
-        phaseEmoji = '💕';
-        const fertileStart = new Date(predictions.fertileWindowStart);
-        fertileStart.setHours(0, 0, 0, 0);
-        const daysSinceFertileStart = Math.floor(
-          (today.getTime() - fertileStart.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        phaseDay = Math.max(1, daysSinceFertileStart + 1);
-      } else if (dayInfo.isPMS && predictions.ovulationDate) {
-        // In luteal/PMS phase
-        phaseName = 'Luteal';
-        phaseEmoji = '😌';
-        const ovulationDate = new Date(predictions.ovulationDate);
-        ovulationDate.setHours(0, 0, 0, 0);
-        const daysSinceOvulation = Math.floor(
-          (today.getTime() - ovulationDate.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        phaseDay = Math.max(1, daysSinceOvulation + 1);
-      } else {
-        // In follicular phase
-        phaseName = 'Follicular';
-        phaseEmoji = '🌸';
-        const daysSincePeriodEnd = Math.floor(
-          (today.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        phaseDay = Math.max(1, daysSincePeriodEnd + 1);
-      }
-    } else {
-      // No period data
-      phaseName = 'Cycle';
-      phaseDay = 1;
     }
-    
-    return { cycleDay, phaseName, phaseDay, phaseEmoji, dayInfo };
-  }, [periods, predictions, settings, currentPeriodInfo]);
+
+    const phaseStart = phaseDetail.phaseStart;
+    let phaseDay = 1;
+    if (phaseStart) {
+      const diff = Math.floor((today.getTime() - phaseStart.getTime()) / (1000 * 60 * 60 * 24));
+      phaseDay = diff >= 0 ? diff + 1 : 1;
+    }
+
+    return {
+      cycleDay,
+      phaseKey: phaseDetail.phase as PhaseKey,
+      phaseDay,
+      phaseEmoji: metadata.emoji,
+      phaseMeta: metadata,
+      dayInfo,
+      isPredicted: phaseDetail.isPredicted,
+    };
+  }, [periods, predictions, settings]);
 
   const daysUntilPeriod = useMemo(() => {
     if (isOnPeriod || !predictions.nextPeriodDate) return null;
@@ -216,54 +193,9 @@ export default function HomeScreen() {
     return periods.length === 0;
   }, [periods.length]);
 
-  // Phase-based gradient colors (white to phase color)
   const phaseGradientColors = useMemo((): [string, string, string] => {
-    const phase = currentCycleInfo.phaseName;
-    const dayInfo = currentCycleInfo.dayInfo;
-    
-    // Check if it's the exact ovulation day (not just fertile window)
-    if (dayInfo.isFertile && predictions.ovulationDate) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const ovDate = new Date(predictions.ovulationDate);
-      ovDate.setHours(0, 0, 0, 0);
-      if (today.getTime() === ovDate.getTime()) {
-        // Exact ovulation day - use blue
-        return ['#FFFFFF', '#E3F2FD', '#BBDEFB'];
-      }
-    }
-    
-    switch (phase) {
-      case 'Period':
-        // White to light reddish pink
-        return ['#FFFFFF', '#FFE5ED', '#FFD1DC'];
-      case 'Ovulation':
-        // Check if it's fertile window (yellow) or exact ovulation day (blue)
-        if (dayInfo.isFertile && predictions.ovulationDate) {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const ovDate = new Date(predictions.ovulationDate);
-          ovDate.setHours(0, 0, 0, 0);
-          // If it's the exact ovulation day, use blue, otherwise yellow for fertile window
-          if (today.getTime() === ovDate.getTime()) {
-            return ['#FFFFFF', '#E3F2FD', '#BBDEFB']; // Blue for ovulation day
-          } else {
-            return ['#FFFFFF', '#FFF9E6', '#FFECB3']; // Yellow for fertile window
-          }
-        }
-        // Default to yellow for fertile window if we can't determine
-        return ['#FFFFFF', '#FFF9E6', '#FFECB3'];
-      case 'Luteal':
-        // White to light purple/pink
-        return ['#FFFFFF', '#F3E5F5', '#E1BEE7'];
-      case 'Follicular':
-        // White to light green/blue (subtle)
-        return ['#FFFFFF', '#F1F8F4', '#E8F5E9'];
-      default:
-        // Default: white to very light gray
-        return ['#FFFFFF', '#FAFAFA', '#F5F5F5'];
-    }
-  }, [currentCycleInfo.phaseName, currentCycleInfo.dayInfo, predictions.ovulationDate]);
+    return currentCycleInfo.phaseMeta.gradient;
+  }, [currentCycleInfo.phaseMeta]);
 
   // Removed circleDates - not needed for new design
 
@@ -291,7 +223,8 @@ export default function HomeScreen() {
     if (loadingRef.current) return;
 
     loadingRef.current = true;
-    setLoading(true);
+
+    let showSpinner = true;
 
     try {
       const viewModeRecord = getCurrentViewModeRecord();
@@ -309,23 +242,14 @@ export default function HomeScreen() {
       const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
       if (cachedPeriods !== undefined) {
         setPeriods(cachedPeriods);
+        showSpinner = false;
       }
 
       const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
       if (cachedSettings !== undefined) {
         setSettings(cachedSettings);
+        showSpinner = false;
       }
-
-      const [periodsData, settingsData] = await Promise.all([
-        getPeriods().catch(() => []),
-        getSettings().catch(() => null),
-      ]);
-
-      setPeriods(periodsData);
-      setSettings(settingsData);
-
-      await setCachedData(periodsCacheKey, periodsData);
-      await setCachedData(settingsCacheKey, settingsData);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -349,18 +273,34 @@ export default function HomeScreen() {
       const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
       if (cachedSymptoms !== undefined) {
         setTodaySymptoms(cachedSymptoms);
+        showSpinner = false;
       }
 
       const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
       if (cachedMoods !== undefined) {
         setTodayMoods(cachedMoods);
+        showSpinner = false;
       }
 
       const cachedReminderStatus = await getCachedData<{ enabled: boolean; lastReminder: Reminder | null }>(remindersCacheKey);
       if (cachedReminderStatus !== undefined) {
         setReminderEnabled(cachedReminderStatus.enabled);
         setLastReminder(cachedReminderStatus.lastReminder);
+        showSpinner = false;
       }
+
+      setLoading(showSpinner);
+
+      const [periodsData, settingsData] = await Promise.all([
+        getPeriods().catch(() => []),
+        getSettings().catch(() => null),
+      ]);
+
+      setPeriods(periodsData);
+      setSettings(settingsData);
+
+      await setCachedData(periodsCacheKey, periodsData);
+      await setCachedData(settingsCacheKey, settingsData);
 
       const [symptoms, moods, reminderStatus] = await Promise.all([
         getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
@@ -670,7 +610,8 @@ export default function HomeScreen() {
               fill="#333"
               fontWeight="600"
             >
-              {currentCycleInfo.phaseName}
+              {`${currentCycleInfo.phaseMeta.emoji} ${currentCycleInfo.phaseMeta.shortLabel}`}
+              {currentCycleInfo.isPredicted ? ' (predicted)' : ''}
             </SvgText>
 
             {/* Center content: Phase day or days left */}
@@ -743,7 +684,7 @@ export default function HomeScreen() {
                   fill="#666"
                   fontWeight="500"
                 >
-                  day of {currentCycleInfo.phaseName.toLowerCase()}
+                  day of {currentCycleInfo.phaseMeta.shortLabel.toLowerCase()}
                 </SvgText>
               </>
             )}
@@ -872,6 +813,12 @@ export default function HomeScreen() {
             )}
           </View>
         )}
+
+        <PhaseGuide
+          predictions={predictions}
+          currentPhase={currentCycleInfo.phaseKey}
+          style={{ marginTop: hasNoPeriodData ? 0 : -4 }}
+        />
 
         {/* Reminders Section */}
         {settings?.reminderEnabled && (
@@ -1123,13 +1070,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   periodCard: {
-    backgroundColor: '#FFE5ED', // Light pink
+    backgroundColor: '#FF174422',
+    borderColor: '#FF174488',
+    borderWidth: 1,
   },
   ovulationCard: {
-    backgroundColor: '#FFE8D6', // Light peach/orange
+    backgroundColor: '#4A90E222',
+    borderColor: '#4A90E288',
+    borderWidth: 1,
   },
   fertilityCard: {
-    backgroundColor: '#E3F2FD', // Light blue
+    backgroundColor: '#FFC94D22',
+    borderColor: '#FFC94D88',
+    borderWidth: 1,
   },
   phaseCardContent: {
     flex: 1,

@@ -3,6 +3,15 @@ import { Period, UserSettings } from './api';
 export type CyclePhase = 'period' | 'fertile' | 'pms' | 'normal' | 'predicted_period';
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 
+export type DetailedPhaseKey = 'menstrual' | 'follicular' | 'ovulation' | 'luteal';
+
+export interface DetailedPhaseInfo {
+  phase: DetailedPhaseKey;
+  isPredicted: boolean;
+  phaseStart: Date | null;
+  phaseEnd: Date | null;
+}
+
 export interface DayInfo {
   date: Date;
   phase: CyclePhase;
@@ -173,6 +182,175 @@ export function calculatePredictions(
   };
 }
 
+function normalise(date: Date | null): Date | null {
+  if (!date) return null;
+  const clone = new Date(date);
+  clone.setHours(0, 0, 0, 0);
+  return clone;
+}
+
+function resolvePeriodEnd(period: Period, fallbackLength: number): Date {
+  if (period.endDate) {
+    const explicitEnd = new Date(period.endDate);
+    explicitEnd.setHours(0, 0, 0, 0);
+    return explicitEnd;
+  }
+  const assumedEnd = new Date(period.startDate);
+  assumedEnd.setHours(0, 0, 0, 0);
+  assumedEnd.setDate(assumedEnd.getDate() + Math.max(1, fallbackLength) - 1);
+  return assumedEnd;
+}
+
+export function getPhaseDetailsForDate(
+  date: Date,
+  periods: Period[],
+  predictions: CyclePredictions,
+  settings: UserSettings | null = null
+): DetailedPhaseInfo {
+  const dayDate = new Date(date);
+  dayDate.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const effectivePeriodLength = Math.max(
+    1,
+    predictions?.periodLength || settings?.averagePeriodLength || 5
+  );
+
+  const sortedPeriods = [...periods].sort(
+    (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+  );
+
+  const lastPeriod = sortedPeriods[0] || null;
+  const lastPeriodStart = lastPeriod ? normalise(new Date(lastPeriod.startDate)) : null;
+  const lastPeriodEnd = lastPeriod
+    ? resolvePeriodEnd(lastPeriod, effectivePeriodLength)
+    : null;
+
+  // 1. Actual menstrual days
+  if (sortedPeriods.length > 0) {
+    for (const period of sortedPeriods) {
+      const start = normalise(new Date(period.startDate));
+      const end = resolvePeriodEnd(period, effectivePeriodLength);
+      if (dayDate >= start! && dayDate <= end) {
+        return {
+          phase: 'menstrual',
+          isPredicted: dayDate >= today,
+          phaseStart: start,
+          phaseEnd: end,
+        };
+      }
+    }
+  }
+
+  // 2. Predicted upcoming period (future)
+  if (predictions.nextPeriodDate) {
+    const predictedStart = normalise(predictions.nextPeriodDate);
+    const predictedEnd = new Date(predictedStart!);
+    predictedEnd.setDate(predictedEnd.getDate() + effectivePeriodLength - 1);
+    if (dayDate >= predictedStart! && dayDate <= predictedEnd) {
+      return {
+        phase: 'menstrual',
+        isPredicted: true,
+        phaseStart: predictedStart,
+        phaseEnd: predictedEnd,
+      };
+    }
+  }
+
+  const ovulationDate = predictions.ovulationDate
+    ? normalise(predictions.ovulationDate)
+    : null;
+
+  if (ovulationDate && dayDate.getTime() === ovulationDate.getTime()) {
+    return {
+      phase: 'ovulation',
+      isPredicted: dayDate >= today,
+      phaseStart: ovulationDate,
+      phaseEnd: ovulationDate,
+    };
+  }
+
+  const nextPeriodStart = predictions.nextPeriodDate
+    ? normalise(predictions.nextPeriodDate)
+    : null;
+
+  if (ovulationDate && nextPeriodStart) {
+    const lutealStart = new Date(ovulationDate);
+    lutealStart.setDate(lutealStart.getDate() + 1);
+    const lutealEnd = new Date(nextPeriodStart);
+    lutealEnd.setDate(lutealEnd.getDate() - 1);
+
+    if (dayDate >= lutealStart && dayDate <= lutealEnd) {
+      return {
+        phase: 'luteal',
+        isPredicted: dayDate >= today,
+        phaseStart: lutealStart,
+        phaseEnd: lutealEnd,
+      };
+    }
+  }
+
+  if (lastPeriodEnd && ovulationDate && dayDate > lastPeriodEnd && dayDate < ovulationDate) {
+    const follicularStart = new Date(lastPeriodEnd);
+    follicularStart.setDate(follicularStart.getDate() + 1);
+    const follicularEnd = new Date(ovulationDate);
+    follicularEnd.setDate(follicularEnd.getDate() - 1);
+    return {
+      phase: 'follicular',
+      isPredicted: dayDate >= today,
+      phaseStart: follicularStart,
+      phaseEnd: follicularEnd,
+    };
+  }
+
+  if (!lastPeriodEnd && ovulationDate && dayDate < ovulationDate) {
+    // No recorded period but we have ovulation prediction — treat as follicular
+    const fallbackStart = new Date(ovulationDate);
+    fallbackStart.setDate(fallbackStart.getDate() - 6);
+    return {
+      phase: 'follicular',
+      isPredicted: true,
+      phaseStart: fallbackStart,
+      phaseEnd: new Date(ovulationDate.getTime() - 24 * 60 * 60 * 1000),
+    };
+  }
+
+  if (lastPeriodEnd && (!ovulationDate || dayDate <= lastPeriodEnd)) {
+    // Before ovulation or ovulation unknown
+    const follicularStart = new Date(lastPeriodEnd);
+    follicularStart.setDate(follicularStart.getDate() + 1);
+    const follicularEnd = ovulationDate
+      ? new Date(ovulationDate.getTime() - 24 * 60 * 60 * 1000)
+      : nextPeriodStart
+      ? new Date(nextPeriodStart.getTime() - 24 * 60 * 60 * 1000)
+      : null;
+    return {
+      phase: 'follicular',
+      isPredicted: dayDate >= today,
+      phaseStart: follicularStart,
+      phaseEnd: follicularEnd,
+    };
+  }
+
+  // Default fallback — luteal if we're past ovulation or general phase
+  const fallbackStart = ovulationDate
+    ? new Date(ovulationDate.getTime() + 24 * 60 * 60 * 1000)
+    : lastPeriodEnd
+    ? new Date(lastPeriodEnd.getTime() + 24 * 60 * 60 * 1000)
+    : null;
+  const fallbackEnd = nextPeriodStart
+    ? new Date(nextPeriodStart.getTime() - 24 * 60 * 60 * 1000)
+    : null;
+
+  return {
+    phase: 'luteal',
+    isPredicted: dayDate >= today,
+    phaseStart: fallbackStart,
+    phaseEnd: fallbackEnd,
+  };
+}
+
 /**
  * Get phase information for a specific date (optimized)
  */
@@ -184,112 +362,51 @@ export function getDayInfo(
   const dayDate = new Date(date);
   dayDate.setHours(0, 0, 0, 0);
 
-  const inferredPeriodLength = Math.max(1, predictions?.periodLength || 5);
+  const phaseDetails = getPhaseDetailsForDate(dayDate, periods, predictions, null);
 
-  const resolvePeriodEnd = (period: Period) => {
-    if (period.endDate) {
-      const explicitEnd = new Date(period.endDate);
-      explicitEnd.setHours(0, 0, 0, 0);
-      return explicitEnd;
-    }
-    const assumedEnd = new Date(period.startDate);
-    assumedEnd.setHours(0, 0, 0, 0);
-    assumedEnd.setDate(assumedEnd.getDate() + inferredPeriodLength - 1);
-    return assumedEnd;
-  };
-
-  // Check if it's an actual period day
-  const isPeriod = periods.some((period) => {
-    const start = new Date(period.startDate);
-    start.setHours(0, 0, 0, 0);
-    const end = resolvePeriodEnd(period);
-    return dayDate >= start && dayDate <= end;
-  });
-
-  if (isPeriod) {
-    return {
-      date: dayDate,
-      phase: 'period',
-      confidence: 'high',
-      isPeriod: true,
-      isFertile: false,
-      isPMS: false,
-      isPredicted: false,
-    };
-  }
-
-  // Check predicted period
-  if (predictions.nextPeriodDate) {
-    const predictedPeriodStart = new Date(predictions.nextPeriodDate);
-    predictedPeriodStart.setHours(0, 0, 0, 0);
-    const predictedPeriodEnd = new Date(predictedPeriodStart);
-    predictedPeriodEnd.setDate(
-      predictedPeriodEnd.getDate() + predictions.periodLength - 1
-    );
-    predictedPeriodEnd.setHours(23, 59, 59, 999);
-
-    const dayTime = dayDate.getTime();
-    const startTime = predictedPeriodStart.getTime();
-    const endTime = predictedPeriodEnd.getTime();
-    
-    if (dayTime >= startTime && dayTime <= endTime) {
+  switch (phaseDetails.phase) {
+    case 'menstrual':
       return {
         date: dayDate,
-        phase: 'predicted_period',
+        phase: phaseDetails.isPredicted ? 'predicted_period' : 'period',
+        confidence: predictions.confidence,
+        isPeriod: !phaseDetails.isPredicted,
+        isFertile: false,
+        isPMS: false,
+        isPredicted: phaseDetails.isPredicted,
+      };
+    case 'ovulation':
+      return {
+        date: dayDate,
+        phase: 'fertile',
+        confidence: predictions.confidence,
+        isPeriod: false,
+        isFertile: true,
+        isPMS: false,
+        isPredicted: phaseDetails.isPredicted,
+      };
+    case 'luteal':
+      return {
+        date: dayDate,
+        phase: 'pms',
+        confidence: predictions.confidence,
+        isPeriod: false,
+        isFertile: false,
+        isPMS: true,
+        isPredicted: phaseDetails.isPredicted,
+      };
+    case 'follicular':
+    default:
+      return {
+        date: dayDate,
+        phase: 'normal',
         confidence: predictions.confidence,
         isPeriod: false,
         isFertile: false,
         isPMS: false,
-        isPredicted: true,
+        isPredicted: phaseDetails.isPredicted,
       };
-    }
   }
-
-  // Check fertile window
-  if (
-    predictions.fertileWindowStart &&
-    predictions.fertileWindowEnd &&
-    dayDate >= predictions.fertileWindowStart &&
-    dayDate <= predictions.fertileWindowEnd
-  ) {
-    return {
-      date: dayDate,
-      phase: 'fertile',
-      confidence: predictions.confidence,
-      isPeriod: false,
-      isFertile: true,
-      isPMS: false,
-      isPredicted: true,
-    };
-  }
-
-  // Check PMS window
-  if (
-    predictions.pmsStart &&
-    predictions.pmsEnd &&
-    dayDate >= predictions.pmsStart &&
-    dayDate <= predictions.pmsEnd
-  ) {
-    return {
-      date: dayDate,
-      phase: 'pms',
-      confidence: predictions.confidence,
-      isPeriod: false,
-      isFertile: false,
-      isPMS: true,
-      isPredicted: true,
-    };
-  }
-
-  return {
-    date: dayDate,
-    phase: 'normal',
-    confidence: 'high',
-    isPeriod: false,
-    isFertile: false,
-    isPMS: false,
-    isPredicted: false,
-  };
 }
 
 /**

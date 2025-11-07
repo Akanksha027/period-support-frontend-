@@ -29,13 +29,17 @@ import {
   Symptom,
   Mood,
   Reminder,
+  UserInfo,
+  getUserInfo,
   getCurrentViewModeRecord,
 } from '../../lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
-import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
+import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate } from '../../lib/periodCalculations';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
+import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
+import PhaseGuide from '../../components/PhaseGuide';
 
 // Fallback constants for symptom data
 const safeSymptomOptions: any[] = [];
@@ -72,46 +76,44 @@ export default function ViewerInsightsScreen() {
   // Get user name and info
   useEffect(() => {
     const loadUserInfo = async () => {
-      if (user && isSignedIn) {
-        try {
-          const info = await getUserInfo();
-          if (info) {
-            setUserInfo(info);
-            // Always use viewed user's name for viewer tabs
-            if (info.userType === 'OTHER' && info.viewedUser) {
-              const viewedName = info.viewedUser.name || 
-                                info.viewedUser.email?.split('@')[0] ||
-                                'User';
-              setUserName(viewedName);
-            } else {
-              // Fallback
-              const name = user.firstName || 
-                          user.emailAddresses[0]?.emailAddress?.split('@')[0] ||
-                          'User';
-              setUserName(name);
-            }
-          } else {
-            // Fallback to Clerk user name
-            const name = user.firstName || 
-                        user.emailAddresses[0]?.emailAddress?.split('@')[0] ||
-                        'User';
+      try {
+        const viewModeRecord = getCurrentViewModeRecord();
+        const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
+          ? viewModeRecord?.viewedUserId ?? user?.id
+          : user?.id;
+        const cacheScope = buildCacheKey([
+          viewModeRecord?.mode ?? 'UNKNOWN',
+          scopeIdentifier ?? 'self',
+        ]);
+        const userInfoCacheKey = buildCacheKey(['viewer-insights-user-info', cacheScope]);
+
+        const cachedInfo = await getCachedData<UserInfo | null>(userInfoCacheKey);
+        if (cachedInfo) {
+          setUserInfo(cachedInfo);
+          if (cachedInfo.userType === 'OTHER' && cachedInfo.viewedUser) {
+            const name = cachedInfo.viewedUser.name ||
+              cachedInfo.viewedUser.email?.split('@')[0] ||
+              'User';
             setUserName(name);
           }
-        } catch (error) {
-          console.error('Error loading user info:', error);
-          // Fallback to Clerk user name
-          const name = user.firstName || 
-                      user.emailAddresses[0]?.emailAddress?.split('@')[0] ||
-                      'User';
-          setUserName(name);
         }
+
+        const info = await getUserInfo();
+        if (info) {
+          setUserInfo(info);
+          await setCachedData(userInfoCacheKey, info);
+          if (info.userType === 'OTHER' && info.viewedUser) {
+            const name = info.viewedUser.name || info.viewedUser.email?.split('@')[0] || 'User';
+            setUserName(name);
+          }
+        }
+      } catch (error) {
+        console.error('[Viewer Insights] Failed to load user info:', error);
       }
     };
-    
-    if (user && isSignedIn) {
-      loadUserInfo();
-    }
-  }, [user, isSignedIn]);
+
+    loadUserInfo();
+  }, [user]);
 
   const predictions = useMemo<CyclePredictions>(() => {
     return calculatePredictions(periods, settings);
@@ -134,67 +136,41 @@ export default function ViewerInsightsScreen() {
   const currentCycleInfo = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const phaseDetail = getPhaseDetailsForDate(today, periods, predictions, settings);
+    const metadata = PHASE_PALETTE[phaseDetail.phase];
     const dayInfo = getDayInfo(today, periods, predictions);
-    
+
     const sortedPeriods = [...periods].sort(
       (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
     );
-    
+
     let cycleDay = 1;
-    let phaseName = 'Cycle';
-    let phaseDay = 1;
-    let phaseEmoji = '😊';
-    
     if (sortedPeriods.length > 0) {
       const lastPeriodStart = new Date(sortedPeriods[0].startDate);
       lastPeriodStart.setHours(0, 0, 0, 0);
-      const lastPeriodEnd = sortedPeriods[0].endDate 
-        ? new Date(sortedPeriods[0].endDate)
-        : new Date(lastPeriodStart.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000);
-      lastPeriodEnd.setHours(0, 0, 0, 0);
-      
       const daysSinceLastPeriod = Math.floor(
         (today.getTime() - lastPeriodStart.getTime()) / (1000 * 60 * 60 * 24)
       );
       cycleDay = daysSinceLastPeriod + 1;
-      
-      if (dayInfo.isPeriod && currentPeriodInfo) {
-        phaseName = 'Period';
-        phaseDay = currentPeriodInfo.dayNumber || 1;
-        phaseEmoji = '🩸';
-      } else if (dayInfo.isFertile && predictions.fertileWindowStart) {
-        phaseName = 'Ovulation';
-        phaseEmoji = '💕';
-        const fertileStart = new Date(predictions.fertileWindowStart);
-        fertileStart.setHours(0, 0, 0, 0);
-        const daysSinceFertileStart = Math.floor(
-          (today.getTime() - fertileStart.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        phaseDay = Math.max(1, daysSinceFertileStart + 1);
-      } else if (dayInfo.isPMS && predictions.ovulationDate) {
-        phaseName = 'Luteal';
-        phaseEmoji = '😌';
-        const ovulationDate = new Date(predictions.ovulationDate);
-        ovulationDate.setHours(0, 0, 0, 0);
-        const daysSinceOvulation = Math.floor(
-          (today.getTime() - ovulationDate.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        phaseDay = Math.max(1, daysSinceOvulation + 1);
-      } else {
-        phaseName = 'Follicular';
-        phaseEmoji = '🌸';
-        const daysSincePeriodEnd = Math.floor(
-          (today.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        phaseDay = Math.max(1, daysSincePeriodEnd + 1);
-      }
-    } else {
-      phaseName = 'Cycle';
-      phaseDay = 1;
     }
-    
-    return { cycleDay, phaseName, phaseDay, phaseEmoji, dayInfo };
-  }, [periods, predictions, settings, currentPeriodInfo]);
+
+    const phaseStart = phaseDetail.phaseStart;
+    let phaseDay = 1;
+    if (phaseStart) {
+      const diff = Math.floor((today.getTime() - phaseStart.getTime()) / (1000 * 60 * 60 * 24));
+      phaseDay = diff >= 0 ? diff + 1 : 1;
+    }
+
+    return {
+      cycleDay,
+      phaseKey: phaseDetail.phase as PhaseKey,
+      phaseDay,
+      phaseEmoji: metadata.emoji,
+      phaseMeta: metadata,
+      dayInfo,
+      isPredicted: phaseDetail.isPredicted,
+    };
+  }, [periods, predictions, settings]);
 
   const daysUntilPeriod = useMemo(() => {
     if (isOnPeriod || !predictions.nextPeriodDate) return null;
@@ -212,43 +188,8 @@ export default function ViewerInsightsScreen() {
 
   // Phase-based gradient colors
   const phaseGradientColors = useMemo((): [string, string, string] => {
-    const phase = currentCycleInfo.phaseName;
-    const dayInfo = currentCycleInfo.dayInfo;
-    
-    if (dayInfo.isFertile && predictions.ovulationDate) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const ovDate = new Date(predictions.ovulationDate);
-      ovDate.setHours(0, 0, 0, 0);
-      if (today.getTime() === ovDate.getTime()) {
-        return ['#FFFFFF', '#E3F2FD', '#BBDEFB'];
-      }
-    }
-    
-    switch (phase) {
-      case 'Period':
-        return ['#FFFFFF', '#FFE5ED', '#FFD1DC'];
-      case 'Ovulation':
-        if (dayInfo.isFertile && predictions.ovulationDate) {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const ovDate = new Date(predictions.ovulationDate);
-          ovDate.setHours(0, 0, 0, 0);
-          if (today.getTime() === ovDate.getTime()) {
-            return ['#FFFFFF', '#E3F2FD', '#BBDEFB'];
-          } else {
-            return ['#FFFFFF', '#FFF9E6', '#FFECB3'];
-          }
-        }
-        return ['#FFFFFF', '#FFF9E6', '#FFECB3'];
-      case 'Luteal':
-        return ['#FFFFFF', '#F3E5F5', '#E1BEE7'];
-      case 'Follicular':
-        return ['#FFFFFF', '#F1F8F4', '#E8F5E9'];
-      default:
-        return ['#FFFFFF', '#FAFAFA', '#F5F5F5'];
-    }
-  }, [currentCycleInfo.phaseName, currentCycleInfo.dayInfo, predictions.ovulationDate]);
+    return currentCycleInfo.phaseMeta.gradient;
+  }, [currentCycleInfo.phaseMeta]);
 
   const userRef = useRef(user);
   const isSignedInRef = useRef(isSignedIn);
@@ -271,7 +212,8 @@ export default function ViewerInsightsScreen() {
     if (loadingRef.current) return;
 
     loadingRef.current = true;
-    setLoading(true);
+
+    let showSpinner = true;
 
     try {
       const viewModeRecord = getCurrentViewModeRecord();
@@ -289,23 +231,14 @@ export default function ViewerInsightsScreen() {
       const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
       if (cachedPeriods !== undefined) {
         setPeriods(cachedPeriods);
+        showSpinner = false;
       }
 
       const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
       if (cachedSettings !== undefined) {
         setSettings(cachedSettings);
+        showSpinner = false;
       }
-
-      const [periodsData, settingsData] = await Promise.all([
-        getPeriods().catch(() => []),
-        getSettings().catch(() => null),
-      ]);
-
-      setPeriods(periodsData);
-      setSettings(settingsData);
-
-      await setCachedData(periodsCacheKey, periodsData);
-      await setCachedData(settingsCacheKey, settingsData);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -329,18 +262,34 @@ export default function ViewerInsightsScreen() {
       const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
       if (cachedSymptoms !== undefined) {
         setTodaySymptoms(cachedSymptoms);
+        showSpinner = false;
       }
 
       const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
       if (cachedMoods !== undefined) {
         setTodayMoods(cachedMoods);
+        showSpinner = false;
       }
 
       const cachedReminderStatus = await getCachedData<{ enabled: boolean; lastReminder: Reminder | null }>(remindersCacheKey);
       if (cachedReminderStatus !== undefined) {
         setReminderEnabled(cachedReminderStatus.enabled);
         setLastReminder(cachedReminderStatus.lastReminder);
+        showSpinner = false;
       }
+
+      setLoading(showSpinner);
+
+      const [periodsData, settingsData] = await Promise.all([
+        getPeriods().catch(() => []),
+        getSettings().catch(() => null),
+      ]);
+
+      setPeriods(periodsData);
+      setSettings(settingsData);
+
+      await setCachedData(periodsCacheKey, periodsData);
+      await setCachedData(settingsCacheKey, settingsData);
 
       const [symptoms, moods, reminderStatus] = await Promise.all([
         getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
@@ -586,7 +535,8 @@ export default function ViewerInsightsScreen() {
               fill="#333"
               fontWeight="600"
             >
-              {currentCycleInfo.phaseName}
+              {`${currentCycleInfo.phaseEmoji} ${currentCycleInfo.phaseMeta.shortLabel}`}
+              {currentCycleInfo.isPredicted ? ' (predicted)' : ''}
             </SvgText>
 
             {/* Center content: Phase day or days left */}
@@ -656,7 +606,7 @@ export default function ViewerInsightsScreen() {
                   fill="#666"
                   fontWeight="500"
                 >
-                  day of {currentCycleInfo.phaseName.toLowerCase()}
+                  day of {currentCycleInfo.phaseMeta.shortLabel.toLowerCase()}
                 </SvgText>
               </>
             )}
@@ -777,6 +727,12 @@ export default function ViewerInsightsScreen() {
             )}
           </View>
         )}
+
+        <PhaseGuide
+          predictions={predictions}
+          currentPhase={currentCycleInfo.phaseKey}
+          style={{ marginTop: hasNoPeriodData ? 0 : -4 }}
+        />
 
         {/* Reminders Section */}
         {settings?.reminderEnabled && (
@@ -988,13 +944,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   periodCard: {
-    backgroundColor: '#FFE5ED',
+    backgroundColor: '#FF174422',
+    borderColor: '#FF174488',
+    borderWidth: 1,
   },
   ovulationCard: {
-    backgroundColor: '#FFE8D6',
+    backgroundColor: '#4A90E222',
+    borderColor: '#4A90E288',
+    borderWidth: 1,
   },
   fertilityCard: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#FFC94D22',
+    borderColor: '#FFC94D88',
+    borderWidth: 1,
   },
   phaseCardContent: {
     flex: 1,

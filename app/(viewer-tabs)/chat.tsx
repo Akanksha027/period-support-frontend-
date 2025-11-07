@@ -174,13 +174,20 @@ export default function ViewerChatScreen() {
         const settingsCacheKey = buildCacheKey(['viewer-chat-settings', cacheScope]);
 
         const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
+        let showSpinner = true;
         if (cachedPeriods !== undefined) {
           setPeriods(cachedPeriods);
+          showSpinner = false;
         }
 
         const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
         if (cachedSettings !== undefined) {
           setSettings(cachedSettings);
+          showSpinner = false;
+        }
+
+        if (showSpinner) {
+          setLoading(true);
         }
 
         const [periodsData, settingsData] = await Promise.all([

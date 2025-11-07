@@ -41,18 +41,16 @@ export default function Index() {
 
       try {
         if (!isSignedIn || !user) {
-          await setViewMode(null);
+          console.log('[Index] initMode waiting for signed-in user');
           setViewModeState(null);
-          console.log('[Index] initMode cleared mode because not signed in or user missing');
           return;
         }
 
         const email = primaryEmail;
 
         if (!email) {
-          await setViewMode(null);
+          console.log('[Index] initMode missing email');
           setViewModeState(null);
-          console.log('[Index] initMode cleared mode because email missing');
           return;
         }
 
@@ -61,13 +59,12 @@ export default function Index() {
           console.log('[Index] initMode loaded stored mode', stored.mode);
           setViewModeState(stored.mode);
         } else {
-          await setViewMode(null);
-          setViewModeState(null);
-          console.log('[Index] initMode no stored mode, defaulting null');
+          console.log('[Index] initMode no stored mode for email');
+          await setViewMode('SELF', { email, persist: false });
+          setViewModeState('SELF');
         }
       } catch (error) {
         console.error('[Index] Failed to initialise view mode:', error);
-        await setViewMode(null);
         setViewModeState(null);
       } finally {
         setModeReady(true);
@@ -93,14 +90,6 @@ export default function Index() {
         return;
       }
 
-      if (viewMode === null) {
-        console.log('[Index] checkUserType viewMode null -> showing choose login');
-        setUserInfo(null);
-        setHasCompletedOnboarding(false);
-        setLoading(false);
-        return;
-      }
-
       try {
         const token = await getToken();
         if (!token) {
@@ -111,15 +100,50 @@ export default function Index() {
         }
 
         const info = await getUserInfo();
-        const activeMode = viewMode;
+        let effectiveInfo = info;
+        let activeMode = viewMode;
+
+        if (!activeMode && primaryEmail) {
+          // First assume SELF and see if backend confirms
+          await setViewMode('SELF', { email: primaryEmail, persist: false });
+          setViewModeState('SELF');
+          effectiveInfo = await getUserInfo();
+
+          if (effectiveInfo?.userType === 'SELF') {
+            await setViewMode('SELF', { email: primaryEmail, persist: true });
+            activeMode = 'SELF';
+          } else {
+            // Not a self account; try OTHER
+            await setViewMode('OTHER', { email: primaryEmail, persist: false });
+            setViewModeState('OTHER');
+            effectiveInfo = await getUserInfo();
+
+            if (effectiveInfo?.userType === 'OTHER' && effectiveInfo.viewedUser) {
+              await setViewMode('OTHER', {
+                email: primaryEmail,
+                viewedUserId: effectiveInfo.viewedUser.id,
+                viewedUserEmail: effectiveInfo.viewedUser.email,
+                persist: true,
+              });
+              activeMode = 'OTHER';
+            } else {
+              // Fallback to SELF if OTHER attempt failed
+              await setViewMode('SELF', { email: primaryEmail, persist: true });
+              setViewModeState('SELF');
+              activeMode = 'SELF';
+              effectiveInfo = await getUserInfo();
+            }
+          }
+        }
+
         console.log('[Index] checkUserType fetched user info', {
           activeMode,
-          apiUserType: info?.userType,
-          hasViewedUser: !!info?.viewedUser,
+          apiUserType: effectiveInfo?.userType,
+          hasViewedUser: !!effectiveInfo?.viewedUser,
         });
 
         if (activeMode === 'OTHER') {
-          if (!info || info.userType !== 'OTHER' || !info.viewedUser || !primaryEmail) {
+          if (!effectiveInfo || effectiveInfo.userType !== 'OTHER' || !effectiveInfo.viewedUser || !primaryEmail) {
             Alert.alert(
               'Access Removed',
               'The account you were viewing is no longer sharing cycle data.'
@@ -134,27 +158,27 @@ export default function Index() {
           if (primaryEmail) {
             await setViewMode('OTHER', {
               email: primaryEmail,
-              viewedUserId: info.viewedUser.id,
-              viewedUserEmail: info.viewedUser.email,
+              viewedUserId: effectiveInfo.viewedUser.id,
+              viewedUserEmail: effectiveInfo.viewedUser.email,
               persist: true,
             });
           }
           setViewModeState('OTHER');
-          setUserInfo(info);
+          setUserInfo(effectiveInfo);
           setHasCompletedOnboarding(true);
           return;
         }
 
-        if (info) {
-          if (info.userType === 'OTHER' && info.viewedUser && primaryEmail) {
+        if (effectiveInfo) {
+          if (effectiveInfo.userType === 'OTHER' && effectiveInfo.viewedUser && primaryEmail) {
             await setViewMode('OTHER', {
               email: primaryEmail,
-              viewedUserId: info.viewedUser.id,
-              viewedUserEmail: info.viewedUser.email,
+              viewedUserId: effectiveInfo.viewedUser.id,
+              viewedUserEmail: effectiveInfo.viewedUser.email,
               persist: true,
             });
             setViewModeState('OTHER');
-            setUserInfo(info);
+            setUserInfo(effectiveInfo);
             setHasCompletedOnboarding(true);
             return;
           }
@@ -165,7 +189,7 @@ export default function Index() {
             await setViewMode('SELF');
           }
           setViewModeState('SELF');
-          setUserInfo(info);
+          setUserInfo(effectiveInfo);
 
           const settings = await getSettings();
           const hasOnboarding = settings?.birthYear || settings?.lastPeriodDate;
@@ -189,7 +213,6 @@ export default function Index() {
           setViewModeState(null);
           setViewerAccessRevoked(true);
           setUserInfo(null);
-          console.log('[Index] checkUserType OTHER revoked');
           return;
         }
 

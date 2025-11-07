@@ -28,9 +28,10 @@ import {
   getCurrentViewModeRecord,
 } from '../../lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
-import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions } from '../../lib/periodCalculations';
+import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate } from '../../lib/periodCalculations';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
+import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -214,6 +215,7 @@ export default function ViewerCalendarScreen() {
   const loadLogsForDate = useCallback(async (date: Date) => {
     if (!user) return;
 
+    let showSpinner = true;
     setLoadingLogs(true);
     try {
       const startOfDay = new Date(date);
@@ -246,11 +248,17 @@ export default function ViewerCalendarScreen() {
       const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
       if (cachedSymptoms !== undefined) {
         setSelectedDateSymptoms(cachedSymptoms);
+        showSpinner = false;
       }
 
       const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
       if (cachedMoods !== undefined) {
         setSelectedDateMoods(cachedMoods);
+        showSpinner = false;
+      }
+
+      if (!showSpinner) {
+        setLoadingLogs(false);
       }
 
       const [symptoms, moods] = await Promise.all([
@@ -311,44 +319,9 @@ export default function ViewerCalendarScreen() {
 
   const getDayStatus = useCallback(
     (date: Date) => {
-      const dayInfo = getDayInfo(date, periods, predictions);
-
-      // Check if it's an actual period day
-      const isPeriodDay = periods.some((period) => {
-        const start = new Date(period.startDate);
-        start.setHours(0, 0, 0, 0);
-        const end = period.endDate
-          ? new Date(period.endDate)
-          : new Date(start.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000 - 1);
-        end.setHours(23, 59, 59, 999);
-        return date >= start && date <= end;
-      });
-
-      if (isPeriodDay) {
-        return { type: 'period', color: '#FF6B9D' }; // Red
-      }
-
-      // Check if it's ovulation day first (most specific)
-      if (predictions.ovulationDate && dayInfo.isFertile) {
-        const dateTime = date.getTime();
-        const ovDate = new Date(predictions.ovulationDate);
-        ovDate.setHours(0, 0, 0, 0);
-        const ovTime = ovDate.getTime();
-        if (Math.abs(dateTime - ovTime) < 24 * 60 * 60 * 1000) {
-          return { type: 'ovulation', color: '#4A90E2' }; // Blue
-        }
-      }
-
-      // Check if it's in the fertility window (but not ovulation day)
-      if (dayInfo.phase === 'fertile' || dayInfo.isFertile) {
-        return { type: 'fertile', color: '#FFD93D' }; // Yellow
-      }
-
-      if (dayInfo.phase === 'predicted_period') {
-        return { type: 'predicted', color: '#66BB6A' }; // Green
-      }
-
-      return { type: 'normal', color: Colors.border };
+      const detail = getPhaseDetailsForDate(date, periods, predictions, settings);
+      const meta = PHASE_PALETTE[detail.phase];
+      return { phase: detail.phase, color: meta.color, isPredicted: detail.isPredicted };
     },
     [periods, predictions, settings]
   );
@@ -424,17 +397,15 @@ export default function ViewerCalendarScreen() {
 
               const status = getDayStatus(date);
               const isToday = date.toDateString() === new Date().toDateString();
-              const phaseInfo = getPhaseInfoForDate(date, periods, predictions, settings);
+              const backgroundColor = `${status.color}${status.isPredicted ? '22' : '66'}`;
+              const borderColor = `${status.color}${status.isPredicted ? '33' : 'AA'}`;
 
               return (
                 <TouchableOpacity
                   key={date.toISOString()}
                   style={[
                     styles.dayCell,
-                    status.type === 'period' && styles.periodDay,
-                    status.type === 'ovulation' && styles.ovulationDay,
-                    status.type === 'fertile' && styles.fertileDay,
-                    status.type === 'predicted' && styles.predictedDay,
+                    { backgroundColor, borderColor },
                     isToday && styles.todayDay,
                   ]}
                   onPress={() => handleDatePress(date)}
@@ -442,7 +413,7 @@ export default function ViewerCalendarScreen() {
                   <Text
                     style={[
                       styles.dayText,
-                      status.type !== 'normal' && styles.dayTextColored,
+                      !status.isPredicted && styles.dayTextOnPhase,
                       isToday && styles.todayText,
                     ]}
                   >
@@ -456,21 +427,18 @@ export default function ViewerCalendarScreen() {
 
         {/* Legend */}
         <View style={styles.legend}>
+          {(['menstrual', 'follicular', 'ovulation', 'luteal'] as PhaseKey[]).map((phaseKey) => {
+            const palette = PHASE_PALETTE[phaseKey];
+            return (
+              <View key={phaseKey} style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: palette.color }]} />
+                <Text style={styles.legendText}>{palette.shortLabel}</Text>
+              </View>
+            );
+          })}
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#FF6B9D' }]} />
-            <Text style={styles.legendText}>Period</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#4A90E2' }]} />
-            <Text style={styles.legendText}>Ovulation</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#FFD93D' }]} />
-            <Text style={styles.legendText}>Fertile Window</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#66BB6A' }]} />
-            <Text style={styles.legendText}>Predicted Period</Text>
+            <View style={[styles.legendColor, { backgroundColor: '#999999' }]} />
+            <Text style={styles.legendText}>Predicted tint</Text>
           </View>
         </View>
       </ScrollView>
@@ -638,20 +606,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
-    margin: 2,
-  },
-  periodDay: {
-    backgroundColor: '#FF6B9D',
-  },
-  ovulationDay: {
-    backgroundColor: '#4A90E2',
-  },
-  fertileDay: {
-    backgroundColor: '#FFD93D',
-  },
-  predictedDay: {
-    backgroundColor: '#66BB6A',
+    borderRadius: 10,
+    margin: 3,
   },
   todayDay: {
     borderWidth: 2,
@@ -660,10 +616,11 @@ const styles = StyleSheet.create({
   dayText: {
     fontSize: 14,
     color: Colors.text,
+    fontWeight: '500',
   },
-  dayTextColored: {
+  dayTextOnPhase: {
     color: Colors.white,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   todayText: {
     fontWeight: 'bold',
