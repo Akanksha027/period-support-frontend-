@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '@clerk/clerk-expo';
-import { getSettings, updateSettings, UserSettings } from '../../lib/api';
+import { getSettings, updateSettings, UserSettings, setViewMode } from '../../lib/api';
 import { setClerkTokenGetter } from '../../lib/api';
 
 export default function Profile() {
@@ -88,6 +88,7 @@ export default function Profile() {
         style: 'destructive',
         onPress: async () => {
           try {
+            await setViewMode(null);
             await signOut();
             router.replace('/(auth)/sign-in');
           } catch (error: any) {

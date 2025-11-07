@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
 
 const extra =
   ((Constants as any)?.expoConfig?.extra as any) ||
@@ -39,9 +40,40 @@ const API_URL = resolveApiBase();
 
 // Helper function to get Clerk token and add to request
 let getClerkToken: (() => Promise<string | null>) | null = null;
+let currentViewMode: 'SELF' | 'OTHER' | null = null;
+const VIEW_MODE_STORAGE_KEY = 'VIEW_MODE_PREFERENCE';
 
 export function setClerkTokenGetter(tokenGetter: () => Promise<string | null>) {
   getClerkToken = tokenGetter;
+}
+
+export async function setViewMode(mode: 'SELF' | 'OTHER' | null) {
+  currentViewMode = mode;
+  try {
+    if (mode) {
+      await SecureStore.setItemAsync(VIEW_MODE_STORAGE_KEY, mode);
+    } else {
+      await SecureStore.deleteItemAsync(VIEW_MODE_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn('[API] Failed to persist view mode:', error);
+  }
+}
+
+export async function loadStoredViewMode(): Promise<'SELF' | 'OTHER' | null> {
+  try {
+    const stored = await SecureStore.getItemAsync(VIEW_MODE_STORAGE_KEY);
+    if (stored === 'SELF' || stored === 'OTHER') {
+      currentViewMode = stored;
+      return stored;
+    }
+    currentViewMode = null;
+    return null;
+  } catch (error) {
+    console.warn('[API] Failed to load view mode:', error);
+    currentViewMode = null;
+    return null;
+  }
 }
 
 export const api = axios.create({
@@ -66,6 +98,13 @@ api.interceptors.request.use(
       }
     } catch (error) {
       // Silent - token getter might not be ready yet
+    }
+
+    config.headers = config.headers || {};
+    if (currentViewMode) {
+      config.headers['X-View-Mode'] = currentViewMode;
+    } else if (config.headers['X-View-Mode']) {
+      delete config.headers['X-View-Mode'];
     }
 
     // Log request for debugging

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter, Redirect } from 'expo-router';
 import { useUser, useAuth } from '@clerk/clerk-expo';
-import { api } from '@/lib/api';
+import { api, setViewMode } from '@/lib/api';
 
 export default function ChooseLoginTypeScreen() {
   const router = useRouter();
@@ -24,6 +24,7 @@ export default function ChooseLoginTypeScreen() {
   }
 
   const handleLoginForSelf = async () => {
+    await setViewMode('SELF');
     // Check if user has completed onboarding
     // If not, redirect to onboarding screen
     try {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
-import { loginForOtherAPI, setClerkTokenGetter } from '@/lib/api';
+import { loginForOtherAPI, setClerkTokenGetter, setViewMode } from '@/lib/api';
 
 export default function LoginForOtherScreen() {
   const router = useRouter();
@@ -139,6 +139,8 @@ export default function LoginForOtherScreen() {
       if (completeResponse.success) {
         // Store viewer info for later use
         console.log('[Login For Other] Login completed:', completeResponse.viewer);
+
+              await setViewMode('OTHER');
         
         // OTP verified and OTHER user created successfully, navigate to viewer tabs
         router.replace('/(viewer-tabs)/insights');

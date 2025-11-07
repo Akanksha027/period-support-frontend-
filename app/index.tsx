@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Redirect } from 'expo-router';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { getUserInfo, getSettings, setClerkTokenGetter, UserInfo } from '../lib/api';
+import { View, ActivityIndicator, StyleSheet, Alert } from 'react-native';
+import {
+  getUserInfo,
+  getSettings,
+  setClerkTokenGetter,
+  UserInfo,
+  loadStoredViewMode,
+  setViewMode,
+} from '../lib/api';
 
 export default function Index() {
   const { isSignedIn, isLoaded, getToken } = useAuth();
@@ -10,6 +17,9 @@ export default function Index() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [viewMode, setViewModeState] = useState<'SELF' | 'OTHER' | null>(null);
+  const [modeReady, setModeReady] = useState(false);
+  const [viewerAccessRevoked, setViewerAccessRevoked] = useState(false);
 
   // Set up token getter
   useEffect(() => {
@@ -18,59 +28,134 @@ export default function Index() {
     }
   }, [getToken]);
 
+  useEffect(() => {
+    const initMode = async () => {
+      const stored = await loadStoredViewMode();
+      if (stored) {
+        await setViewMode(stored);
+        setViewModeState(stored);
+      } else {
+        await setViewMode(null);
+        setViewModeState(null);
+      }
+      setModeReady(true);
+    };
+
+    initMode();
+  }, []);
+
   // Check user type and onboarding status
   useEffect(() => {
     const checkUserTypeAndOnboarding = async () => {
-      if (!isLoaded || !isSignedIn || !user || !getToken) {
+      if (!isLoaded || !isSignedIn || !user || !getToken || !modeReady || viewerAccessRevoked) {
+        setLoading(false);
+        return;
+      }
+
+      if (viewMode === null) {
+        setUserInfo(null);
+        setHasCompletedOnboarding(false);
         setLoading(false);
         return;
       }
 
       try {
-        // Get token first
         const token = await getToken();
         if (!token) {
           setLoading(false);
           return;
         }
 
-        // Get user info from database
         const info = await getUserInfo();
+        const activeMode = viewMode;
+
+        if (activeMode === 'OTHER') {
+          if (info.userType !== 'OTHER' || !info.viewedUser) {
+            Alert.alert(
+              'Access Removed',
+              'The account you were viewing is no longer sharing cycle data.'
+            );
+            await setViewMode(null);
+            setViewModeState(null);
+            setViewerAccessRevoked(true);
+            setUserInfo(null);
+            return;
+          }
+
+          await setViewMode('OTHER');
+          setViewModeState('OTHER');
+          setUserInfo(info);
+          setHasCompletedOnboarding(true);
+          return;
+        }
+
         if (info) {
+          if (info.userType === 'OTHER' && info.viewedUser) {
+            await setViewMode('OTHER');
+            setViewModeState('OTHER');
+            setUserInfo(info);
+            setHasCompletedOnboarding(true);
+            return;
+          }
+
+          await setViewMode('SELF');
+          setViewModeState('SELF');
           setUserInfo(info);
 
-          // If user is SELF type, check onboarding status
-          if (info.userType === 'SELF') {
-            const settings = await getSettings();
-            const hasOnboarding = settings?.birthYear || settings?.lastPeriodDate;
-            setHasCompletedOnboarding(!!hasOnboarding);
-          } else {
-            // For OTHER users, they can access the app directly (view-only mode)
-            setHasCompletedOnboarding(true);
-          }
+          const settings = await getSettings();
+          const hasOnboarding = settings?.birthYear || settings?.lastPeriodDate;
+          setHasCompletedOnboarding(!!hasOnboarding);
+        } else {
+          await setViewMode(null);
+          setViewModeState(null);
+          setUserInfo(null);
         }
       } catch (error: any) {
+        if (viewMode === 'OTHER' && error?.response?.status === 404) {
+          Alert.alert(
+            'Access Removed',
+            'The account you were viewing is no longer sharing cycle data.'
+          );
+          await setViewMode(null);
+          setViewModeState(null);
+          setViewerAccessRevoked(true);
+          setUserInfo(null);
+          return;
+        }
+
         console.error('[Index] Error checking user type:', error);
-        // If error, assume user needs to choose login type
+        Alert.alert(
+          'Let’s confirm your login type',
+          'Please choose whether you are logging in for yourself or someone else.'
+        );
+        await setViewMode(null);
+        setViewModeState(null);
+        setUserInfo(null);
       } finally {
         setLoading(false);
       }
     };
 
-    if (isLoaded && isSignedIn) {
+    if (isLoaded && isSignedIn && modeReady && !viewerAccessRevoked) {
       checkUserTypeAndOnboarding();
     } else if (isLoaded && !isSignedIn) {
       setLoading(false);
+    } else if (viewerAccessRevoked) {
+      setLoading(false);
     }
-  }, [isLoaded, isSignedIn, user, getToken]);
+  }, [isLoaded, isSignedIn, user, getToken, modeReady, viewMode, viewerAccessRevoked]);
 
   // Show loading while checking auth state and user type
-  if (!isLoaded || loading) {
+  if (!isLoaded || !modeReady || loading) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" />
       </View>
     );
+  }
+
+  if (viewerAccessRevoked) {
+    return <Redirect href="/choose-login-type" />;
   }
 
   // If not signed in, redirect to login screen

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
+import { setViewMode } from '../../lib/api';
 
 export default function ViewerProfileScreen() {
   const { signOut } = useAuth();
@@ -17,6 +18,7 @@ export default function ViewerProfileScreen() {
     try {
       setLoading(true);
       await signOut();
+      await setViewMode(null);
       router.replace('/(auth)/sign-in');
     } catch (error: any) {
       console.error('[Viewer Profile] Sign out error:', error);
