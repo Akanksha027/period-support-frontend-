@@ -12,6 +12,7 @@ type StoredPushToken = {
 };
 
 const PUSH_TOKEN_STORAGE_KEY = 'PUSH_TOKEN_CACHE_V1';
+const isExpoGo = Constants.appOwnership === 'expo';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -73,6 +74,13 @@ export async function registerForPushNotifications(context: {
       return null;
     }
 
+    if (isExpoGo) {
+      console.log(
+        '[Notifications] Expo Go detected. Remote push notifications require a development build or standalone build.'
+      );
+      return null;
+    }
+
     const existingPermissions = await Notifications.getPermissionsAsync();
     let granted = existingPermissions.granted || existingPermissions.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
 
@@ -87,8 +95,8 @@ export async function registerForPushNotifications(context: {
     }
 
     const projectId = resolveProjectId();
-    if (!projectId) {
-      console.warn('[Notifications] Missing EAS projectId. Push token cannot be generated.');
+    if (!projectId || projectId === 'your-project-id') {
+      console.warn('[Notifications] Missing valid EAS projectId. Skipping Expo push token registration.');
       return null;
     }
 
