@@ -15,7 +15,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "This app does not use the camera.",
         "NSPhotoLibraryUsageDescription": "This app does not access your photo library.",
-        "NSLocationWhenInUseUsageDescription": "This app does not use location services."
+        "NSLocationWhenInUseUsageDescription": "This app does not use location services.",
+        "NSUserNotificationUsageDescription": "We use notifications to remind you about cycle updates for yourself or the person you support."
       },
       "config": {
         "usesNonExemptEncryption": false
