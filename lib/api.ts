@@ -263,6 +263,42 @@ api.interceptors.request.use(
 );
 
 // Add response interceptor for debugging
+const buildFriendlyMessage = (error: any): string => {
+  const status = error?.response?.status;
+  const dataMessage =
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.response?.data?.detail;
+
+  if (dataMessage) {
+    return typeof dataMessage === 'string' ? dataMessage : JSON.stringify(dataMessage);
+  }
+
+  switch (status) {
+    case 400:
+      return 'Please double-check the information and try again.';
+    case 401:
+      return 'Your session has expired. Please sign in again.';
+    case 403:
+      return 'You do not have permission to perform this action.';
+    case 404:
+      return 'We could not find what you were looking for.';
+    case 409:
+      return 'Looks like this already exists. Try a different value.';
+    case 422:
+      return 'Some details are missing or invalid. Please review them.';
+    case 429:
+      return 'Too many requests. Please wait a moment and try again.';
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return 'Our servers are a bit busy. Please try again shortly.';
+    default:
+      return 'Something went wrong. Please try again.';
+  }
+};
+
 api.interceptors.response.use(
   (response) => {
     console.log('[API Response]', {
@@ -280,7 +316,13 @@ api.interceptors.response.use(
       data: error?.response?.data,
       message: error?.message,
     });
-    return Promise.reject(error);
+
+    const friendlyMessage = buildFriendlyMessage(error);
+    const enhancedError: any = new Error(friendlyMessage);
+    Object.assign(enhancedError, error);
+    enhancedError.friendlyMessage = friendlyMessage;
+
+    return Promise.reject(enhancedError);
   }
 );
 

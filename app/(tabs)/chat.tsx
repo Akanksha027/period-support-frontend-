@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -66,6 +66,8 @@ export default function ChatScreen() {
   const { user } = useUser();
   const { getToken } = useAuth();
   const params = useLocalSearchParams<{ initialMessage?: string }>();
+  const insets = useSafeAreaInsets();
+  const TAB_BAR_OFFSET = 78;
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -166,7 +168,7 @@ export default function ChatScreen() {
         />
       </View>
 
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <SafeAreaView style={[styles.safeArea, { paddingBottom: TAB_BAR_OFFSET + insets.bottom }]} edges={['top']}>
         <KeyboardAvoidingView
           style={styles.keyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -242,7 +244,14 @@ export default function ChatScreen() {
             </ScrollView>
           )}
 
-          <View style={styles.inputContainer}>
+          <View
+            style={[
+              styles.inputContainer,
+              {
+                paddingBottom: Math.max(insets.bottom, 8) + 10,
+              },
+            ]}
+          >
             <TextInput
               style={styles.input}
               value={inputText}
@@ -294,7 +303,6 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
-    paddingBottom: 100, // Add padding to ensure input is above tab bar
   },
   greetingSection: {
     paddingHorizontal: 20,

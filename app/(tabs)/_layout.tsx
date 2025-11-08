@@ -13,16 +13,7 @@ const { width } = Dimensions.get('window')
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const pathname = usePathname()
   const insets = useSafeAreaInsets()
-  const { phase } = usePhase()
-
-  const phaseGradient = useMemo(() => {
-    const palette = PHASE_PALETTE[phase]
-    return {
-      border: palette ? palette.color + '66' : 'rgba(210,210,210,0.6)',
-      shadow: palette ? palette.gradient[2] : '#000',
-      icon: palette ? palette.gradient[2] : Colors.primary,
-    }
-  }, [phase])
+  const accentColor = '#FFFFFF'
 
   const tabs = [
     {
@@ -75,13 +66,11 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom === 0 ? 12 : insets.bottom }]}>
-      <View style={[styles.shadowWrapper, { shadowColor: phaseGradient.shadow }]}>
+      <View style={[styles.shadowWrapper, { shadowColor: '#00000040' }]}>
         <View
           style={[
             styles.tabPill,
-            {
-              borderColor: phaseGradient.border,
-            },
+            { borderColor: 'transparent' },
           ]}
         >
           {tabs.map((tab) => {
@@ -97,8 +86,8 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 <Ionicons
                   name={tab.icon as any}
                   size={24}
-                  color={active ? phaseGradient.icon : 'rgba(80,80,80,0.65)'}
-                  style={active ? styles.iconActive : styles.iconInactive}
+                  color={active ? accentColor : 'rgba(255,255,255,0.6)'}
+                  style={styles.icon}
                 />
               </TouchableOpacity>
             )
@@ -150,15 +139,8 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.78)',
-    ...(Platform.OS === 'ios'
-      ? {
-          backdropFilter: 'blur(35px)',
-        }
-      : {
-          backgroundColor: 'rgba(255,255,255,0.85)',
-        }),
+    borderWidth: 0,
+    backgroundColor: '#3D3D3D',
   },
   pillButton: {
     flex: 1,
@@ -166,10 +148,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 6,
   },
-  iconInactive: {
-    opacity: 0.65,
-  },
-  iconActive: {
+  icon: {
     opacity: 1,
   },
 })

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, Platform, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { loginForOtherAPI, setClerkTokenGetter, setViewMode, loadStoredViewModeRecord, peekStoredViewModeRecord } from '@/lib/api';
 import PeriLoader from '../components/PeriLoader';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { Colors } from '../constants/Colors';
 
 export default function LoginForOtherScreen() {
   const router = useRouter();
@@ -17,8 +18,112 @@ export default function LoginForOtherScreen() {
   const [otp, setOtp] = useState('');
   const [otpEmail, setOtpEmail] = useState('');
   const [tempToken, setTempToken] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    variant?: 'info' | 'success' | 'error';
+    primaryLabel?: string;
+    onPrimary?: () => void;
+    secondaryLabel?: string;
+    onSecondary?: () => void;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    variant: 'info',
+  });
 
   const viewerEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? null;
+  const hideDialog = () => setDialog((prev) => ({ ...prev, visible: false }));
+  const showDialog = ({
+    title,
+    message,
+    variant = 'info',
+    primaryLabel,
+    onPrimary,
+    secondaryLabel,
+    onSecondary,
+  }: {
+    title: string;
+    message: string;
+    variant?: 'info' | 'success' | 'error';
+    primaryLabel?: string;
+    onPrimary?: () => void;
+    secondaryLabel?: string;
+    onSecondary?: () => void;
+  }) =>
+    setDialog({
+      visible: true,
+      title,
+      message,
+      variant,
+      primaryLabel,
+      onPrimary,
+      secondaryLabel,
+      onSecondary,
+    });
+
+  const renderDialog = () => {
+    if (!dialog.visible) return null;
+
+    const accentColor =
+      dialog.variant === 'success'
+        ? '#36C88A'
+        : dialog.variant === 'error'
+        ? '#FF6B9D'
+        : Colors.primary;
+
+    return (
+      <Modal transparent animationType="fade" visible={dialog.visible} onRequestClose={hideDialog}>
+        <View style={styles.dialogBackdrop}>
+          <View style={styles.dialogCard}>
+            <View style={[styles.dialogIconWrapper, { backgroundColor: `${accentColor}1A` }]}>
+              <Ionicons
+                name={
+                  dialog.variant === 'success'
+                    ? 'checkmark-circle'
+                    : dialog.variant === 'error'
+                    ? 'alert-circle'
+                    : 'information-circle'
+                }
+                size={32}
+                color={accentColor}
+              />
+            </View>
+            <Text style={styles.dialogTitle}>{dialog.title}</Text>
+            <Text style={styles.dialogMessage}>{dialog.message}</Text>
+            <View style={styles.dialogActions}>
+              {dialog.secondaryLabel ? (
+                <TouchableOpacity
+                  style={[styles.dialogButton, styles.dialogSecondaryButton]}
+                  onPress={() => {
+                    hideDialog();
+                    dialog.onSecondary?.();
+                  }}
+                >
+                  <Text style={[styles.dialogButtonText, styles.dialogSecondaryButtonText]}>
+                    {dialog.secondaryLabel}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.dialogButton, { backgroundColor: accentColor }]}
+                onPress={() => {
+                  hideDialog();
+                  dialog.onPrimary?.();
+                }}
+              >
+                <Text style={[styles.dialogButtonText, styles.dialogPrimaryButtonText]}>
+                  {dialog.primaryLabel || 'OK'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   // Set up token getter for API calls
   useEffect(() => {
@@ -30,16 +135,13 @@ export default function LoginForOtherScreen() {
   // Check if user is logged in
   useEffect(() => {
     if (!isSignedIn) {
-      Alert.alert(
-        'Authentication Required',
-        'You must be logged in to view someone else\'s account. Please log in first.',
-        [
-          {
-            text: 'Go to Login',
-            onPress: () => router.replace('/(auth)/sign-in'),
-          },
-        ]
-      );
+      showDialog({
+        title: 'Authentication Required',
+        message: "You must be logged in to view someone else's account. Please log in first.",
+        variant: 'info',
+        primaryLabel: 'Go to login',
+        onPrimary: () => router.replace('/(auth)/sign-in'),
+      });
     }
   }, [isSignedIn]);
 
@@ -57,7 +159,11 @@ export default function LoginForOtherScreen() {
 
   const handleVerifyCredentials = async () => {
     if (!email) {
-      Alert.alert('Error', 'Please enter email address');
+      showDialog({
+        title: 'Missing Email',
+        message: 'Please enter an email address before continuing.',
+        variant: 'error',
+      });
       return;
     }
 
@@ -66,10 +172,12 @@ export default function LoginForOtherScreen() {
       if (viewerEmail) {
         const storedViewerMode = await peekStoredViewModeRecord(viewerEmail);
         if (storedViewerMode && storedViewerMode.mode !== 'OTHER') {
-          Alert.alert(
-            'Access Restricted',
-            "This account is configured for personal tracking. Please sign in with a different email to view someone else's data."
-          );
+          showDialog({
+            title: 'Access Restricted',
+            message:
+              "This account is configured for personal tracking. Please sign in with a different email to view someone else's data.",
+            variant: 'error',
+          });
           setLoading(false);
           return;
         }
@@ -84,7 +192,11 @@ export default function LoginForOtherScreen() {
       const verifyResponse = await loginForOtherAPI.verifyCredentials(email);
 
       if (!verifyResponse.success) {
-        Alert.alert('Error', verifyResponse.error || 'No account found with this email address');
+        showDialog({
+          title: 'Verification Failed',
+          message: verifyResponse.error || 'No account found with this email address.',
+          variant: 'error',
+        });
         return;
       }
 
@@ -92,7 +204,11 @@ export default function LoginForOtherScreen() {
       await handleSendOTP(email);
     } catch (error: any) {
       console.error('Verify credentials error:', error);
-      Alert.alert('Error', error?.response?.data?.error || 'Failed to verify email. Please try again.');
+      showDialog({
+        title: 'Verification Failed',
+        message: error?.response?.data?.error || 'Failed to verify email. Please try again.',
+        variant: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -105,58 +221,87 @@ export default function LoginForOtherScreen() {
       if (response.success) {
         setOtpEmail(emailAddress);
         setStep('otp');
-        Alert.alert('OTP Sent', 'Please check your email for the verification code. Check the backend console for the OTP code.');
+        showDialog({
+          title: 'OTP Sent',
+          message:
+            'Please check your email for the verification code. (For development: check the backend console too.)',
+          variant: 'success',
+        });
       } else {
-        Alert.alert('Error', response.error || 'Failed to send OTP');
+        showDialog({
+          title: 'OTP Failed',
+          message: response.error || 'Failed to send OTP.',
+          variant: 'error',
+        });
       }
     } catch (error: any) {
       console.error('Send OTP error:', error);
-      Alert.alert('Error', error?.response?.data?.error || 'Failed to send OTP. Please try again.');
+      showDialog({
+        title: 'OTP Failed',
+        message: error?.friendlyMessage || error?.response?.data?.error || 'Failed to send OTP. Please try again.',
+        variant: 'error',
+      });
     }
   };
 
   const handleVerifyOTP = async () => {
     if (!otp || otp.length !== 6) {
-      Alert.alert('Error', 'Please enter a valid 6-digit OTP code');
+      showDialog({
+        title: 'Invalid OTP',
+        message: 'Please enter the 6-digit verification code sent to the email.',
+        variant: 'error',
+      });
       return;
     }
 
-    // Ensure user is logged in
     if (!isSignedIn || !getToken) {
-      Alert.alert(
-        'Authentication Required',
-        'You must be logged in to complete this action. Please log in first.'
-      );
+      showDialog({
+        title: 'Authentication Required',
+        message: 'You must be logged in to complete this action. Please log in first.',
+        variant: 'error',
+        primaryLabel: 'Go to login',
+        onPrimary: () => router.replace('/(auth)/sign-in'),
+      });
       return;
     }
 
     setLoading(true);
     try {
-      // Ensure token is available before making API calls
       const token = await getToken();
       if (!token) {
-        Alert.alert('Error', 'Authentication token not available. Please log in again.');
+        showDialog({
+          title: 'Authentication Error',
+          message: 'Authentication token not available. Please log in again.',
+          variant: 'error',
+        });
         setLoading(false);
         return;
       }
 
       console.log('[Login For Other] User is logged in with Clerk ID:', userId);
 
-      // Step 1: Verify OTP
       const verifyResponse = await loginForOtherAPI.verifyOTP(otpEmail, otp);
 
       if (!verifyResponse.success) {
-        Alert.alert('Error', verifyResponse.error || 'Invalid OTP code');
+        showDialog({
+          title: 'Invalid OTP',
+          message:
+            verifyResponse.error ||
+            'The verification code entered is incorrect. Please try again.',
+          variant: 'error',
+        });
         return;
       }
 
-      // Step 2: Complete login - this creates the OTHER user record
       if (!verifyResponse.tempToken) {
-        Alert.alert('Error', 'Verification token not received. Please try again.');
+        showDialog({
+          title: 'Verification Error',
+          message: 'Verification token not received. Please try again.',
+          variant: 'error',
+        });
         return;
       }
 
-      // Generate a viewer identifier (using device info or timestamp)
       const viewerIdentifier = `device_${Date.now()}`;
 
       console.log('[Login For Other] Completing login with token:', {
@@ -172,7 +317,6 @@ export default function LoginForOtherScreen() {
       );
 
       if (completeResponse.success) {
-        // Store viewer info for later use
         console.log('[Login For Other] Login completed:', completeResponse.viewer);
 
         if (viewerEmail) {
@@ -189,14 +333,24 @@ export default function LoginForOtherScreen() {
           });
         }
 
-        // OTP verified and OTHER user created successfully, navigate to viewer tabs
         router.replace('/(viewer-tabs)/insights');
       } else {
-        Alert.alert('Error', completeResponse.error || 'Failed to complete login. Please try again.');
+        showDialog({
+          title: 'Login Failed',
+          message: completeResponse.error || 'Failed to complete login. Please try again.',
+          variant: 'error',
+        });
       }
     } catch (error: any) {
       console.error('[Login For Other] Verify OTP error:', error);
-      Alert.alert('Error', error?.response?.data?.error || 'Failed to verify OTP. Please try again.');
+        showDialog({
+          title: 'Verification Failed',
+          message:
+            error?.friendlyMessage ||
+            error?.response?.data?.error ||
+            'Failed to verify OTP. Please try again.',
+          variant: 'error',
+        });
     } finally {
       setLoading(false);
     }
@@ -205,6 +359,7 @@ export default function LoginForOtherScreen() {
   if (step === 'otp') {
     return (
       <View style={styles.mainContainer}>
+        {renderDialog()}
         {/* Top pink gradient section with stars */}
         <LinearGradient
           colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
@@ -302,6 +457,7 @@ export default function LoginForOtherScreen() {
 
   return (
     <View style={styles.mainContainer}>
+      {renderDialog()}
       {/* Top pink gradient section with stars */}
       <LinearGradient
         colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
@@ -581,5 +737,71 @@ const styles = StyleSheet.create({
     color: '#FF6B9D',
     fontSize: 14,
     fontWeight: '600',
+  },
+  dialogBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  dialogCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  dialogIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  dialogTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  dialogMessage: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  dialogActions: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    gap: 12,
+  },
+  dialogButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialogButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  dialogPrimaryButtonText: {
+    color: '#FFFFFF',
+  },
+  dialogSecondaryButton: {
+    backgroundColor: '#F6F6F8',
+  },
+  dialogSecondaryButtonText: {
+    color: Colors.text,
   },
 });
