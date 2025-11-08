@@ -32,7 +32,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": [],
+      "permissions": ["NOTIFICATIONS"],
       "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
@@ -52,7 +52,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

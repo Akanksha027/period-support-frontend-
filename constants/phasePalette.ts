@@ -25,7 +25,7 @@ export const PHASE_PALETTE: Record<PhaseKey, PhaseVisuals> = {
     label: 'Follicular Phase',
     shortLabel: 'Follicular',
     color: '#FFC94D',
-    gradient: ['#FFFFFF', '#FFF4D0', '#FFC94D'],
+    gradient: ['#FFFFFF', '#FFF8E0', '#FFE7A1'],
     emoji: '🌼',
     description:
       'FSH gently coaxes follicles to grow while estrogen rebuilds the uterine lining. Energy and creativity typically climb — a great time to plan and learn.',

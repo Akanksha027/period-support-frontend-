@@ -30,16 +30,20 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       key: 'home',
       icon: 'home-outline',
     },
-    
     {
-      name: 'calendar',
-      key: 'calendar',
-      icon: 'calendar-outline',
+      name: 'phases',
+      key: 'phases',
+      icon: 'book-outline',
     },
     {
       name: 'chat',
       key: 'chat',
       icon: 'sparkles-outline',
+    },
+    {
+      name: 'calendar',
+      key: 'calendar',
+      icon: 'calendar-outline',
     },
     {
       name: 'profile',
@@ -112,6 +116,7 @@ export default function TabsLayout() {
       }}
       tabBar={(props) => <CustomTabBar {...props} />}>
       <Tabs.Screen name="home" options={{ title: 'Home' }} />
+      <Tabs.Screen name="phases" options={{ title: 'Cycle Guide' }} />
       <Tabs.Screen name="calendar" options={{ title: 'Calendar' }} />
       <Tabs.Screen name="chat" options={{ title: 'AI Chat' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />

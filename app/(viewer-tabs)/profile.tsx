@@ -5,6 +5,7 @@ import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { setViewMode } from '../../lib/api';
+import { clearStoredPushToken } from '../../lib/notifications';
 
 export default function ViewerProfileScreen() {
   const { signOut } = useAuth();
@@ -17,6 +18,7 @@ export default function ViewerProfileScreen() {
 
     try {
       setLoading(true);
+      await clearStoredPushToken();
       await signOut();
       await setViewMode(null);
       router.replace('/(auth)/sign-in');

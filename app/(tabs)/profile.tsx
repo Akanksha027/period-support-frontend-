@@ -14,12 +14,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth, useUser } from '@clerk/clerk-expo';
 import { getSettings, updateSettings, UserSettings, setViewMode } from '../../lib/api';
 import { setClerkTokenGetter } from '../../lib/api';
+import { clearStoredPushToken } from '../../lib/notifications';
 
 export default function Profile() {
-  const { user, signOut, getToken } = useAuth();
+  const { signOut, getToken } = useAuth();
+  const { user } = useUser();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -88,6 +90,7 @@ export default function Profile() {
         style: 'destructive',
         onPress: async () => {
           try {
+            await clearStoredPushToken();
             await setViewMode(null);
             await signOut();
             router.replace('/(auth)/sign-in');

@@ -11,6 +11,7 @@ import {
   setViewMode,
   ViewMode,
 } from '../lib/api';
+import { registerForPushNotifications } from '../lib/notifications';
 
 export default function Index() {
   const { isSignedIn, isLoaded, getToken } = useAuth();
@@ -246,6 +247,22 @@ export default function Index() {
       setInitialCheckComplete(true);
     }
   }, [isLoaded, isSignedIn, user, primaryEmail, getToken, modeReady, viewMode, viewerAccessRevoked]);
+
+  useEffect(() => {
+    if (!userInfo || !isSignedIn) {
+      return;
+    }
+
+    const viewedUserId =
+      userInfo.userType === 'OTHER'
+        ? userInfo.viewedUserId || userInfo.viewedUser?.id || null
+        : null;
+
+    registerForPushNotifications({
+      mode: userInfo.userType,
+      viewedUserId,
+    });
+  }, [userInfo?.id, userInfo?.userType, userInfo?.viewedUserId, userInfo?.viewedUser?.id, isSignedIn]);
 
   // Show loading while checking auth state and user type
   if (!isLoaded || !modeReady || loading || !initialCheckComplete) {

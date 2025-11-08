@@ -40,7 +40,7 @@ const quickActions: QuickAction[] = [
     title: 'Symptom Advice',
     description: 'Get help with period symptoms and relief tips',
     icon: 'medical-outline',
-    iconColor: '#FFD700', // Golden
+    iconColor: '#FFD700',
     message: 'I need help with my period symptoms. Can you provide advice?',
   },
   {
@@ -48,7 +48,7 @@ const quickActions: QuickAction[] = [
     title: 'Cycle Information',
     description: 'Learn about your cycle phases and predictions',
     icon: 'calendar-outline',
-    iconColor: '#7DD3FC', // Light blue
+    iconColor: '#7DD3FC',
     message: 'Can you explain my cycle phases and what to expect?',
   },
   {
@@ -56,7 +56,7 @@ const quickActions: QuickAction[] = [
     title: 'Health Tips',
     description: 'Get personalized health and wellness guidance',
     icon: 'heart-outline',
-    iconColor: '#FFB6C1', // Light pink
+    iconColor: '#FFB6C1',
     message: 'What health tips do you have for me based on my cycle?',
   },
 ];
@@ -75,14 +75,12 @@ export default function ChatScreen() {
 
   const userName = user?.firstName || user?.fullName?.split(' ')[0] || 'there';
 
-  // Set up token getter for API calls
   useEffect(() => {
     if (getToken) {
       setClerkTokenGetter(getToken);
     }
   }, [getToken]);
 
-  // Handle initial message from params
   useEffect(() => {
     if (params.initialMessage && !initialMessageSent.current) {
       initialMessageSent.current = true;
@@ -94,7 +92,6 @@ export default function ChatScreen() {
   }, [params.initialMessage]);
 
   useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
@@ -103,7 +100,6 @@ export default function ChatScreen() {
   const handleSendMessage = useCallback(async (messageText: string) => {
     if (!messageText.trim() || loading) return;
 
-    // Hide quick actions when user starts chatting
     if (showQuickActions) {
       setShowQuickActions(false);
     }
@@ -117,11 +113,10 @@ export default function ChatScreen() {
 
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
-    setInputText(''); // Clear input immediately
+    setInputText('');
     setLoading(true);
 
     try {
-      // Convert messages to format expected by backend
       const messagesArray = updatedMessages.map(msg => ({
         role: msg.role,
         content: msg.content,
@@ -162,7 +157,6 @@ export default function ChatScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Gradient accent along the bottom edge */}
       <View style={styles.gradientBarContainer} pointerEvents="none">
         <LinearGradient
           colors={['#FF6B35', '#FF8E53', '#FFB3B3', '#E8B4F0', '#C8A2F0']}
@@ -172,13 +166,12 @@ export default function ChatScreen() {
         />
       </View>
 
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
         <KeyboardAvoidingView
           style={styles.keyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={90}
         >
-          {/* Greeting Section */}
           {showQuickActions && messages.length === 0 && (
             <View style={styles.greetingSection}>
               <View style={styles.brainIconContainer}>
@@ -189,7 +182,6 @@ export default function ChatScreen() {
             </View>
           )}
 
-          {/* Messages or Quick Actions */}
           <ScrollView
             ref={scrollViewRef}
             style={styles.messagesContainer}
@@ -247,7 +239,6 @@ export default function ChatScreen() {
             )}
           </ScrollView>
 
-          {/* Input */}
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
@@ -300,6 +291,7 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
+    paddingBottom: 100, // Add padding to ensure input is above tab bar
   },
   greetingSection: {
     paddingHorizontal: 20,

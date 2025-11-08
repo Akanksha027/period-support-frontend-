@@ -446,7 +446,11 @@ export default function ViewerInsightsScreen() {
       style={styles.gradientContainer}
     >
       <SafeAreaView style={styles.container}>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.greeting}>Welcome, {userName}! 👋</Text>
@@ -606,7 +610,7 @@ export default function ViewerInsightsScreen() {
                   fill="#666"
                   fontWeight="500"
                 >
-                  day of {currentCycleInfo.phaseMeta.shortLabel.toLowerCase()}
+                  {`day of ${currentCycleInfo.phaseMeta.shortLabel.toLowerCase()}`}
                 </SvgText>
               </>
             )}
@@ -647,29 +651,18 @@ export default function ViewerInsightsScreen() {
         {/* Cycle Phase Cards */}
         {!hasNoPeriodData && (
           <View style={styles.phaseCardsContainer}>
-            {/* Next Period Card */}
-            {(predictions.nextPeriodDate || isOnPeriod) && (
-              <View style={[styles.phaseCard, styles.periodCard]}>
-                <View style={styles.phaseCardContent}>
-                  <Text style={styles.phaseCardTitle}>
-                    {isOnPeriod ? 'On Period' : 'Next Period'}
-                  </Text>
-                  <Text style={styles.phaseCardDate}>
-                    {isOnPeriod && currentPeriodInfo
-                      ? `Day ${currentPeriodInfo.dayNumber} of ${currentPeriodInfo.periodLength}`
-                      : daysUntilPeriod !== null
-                      ? `in ${daysUntilPeriod} ${daysUntilPeriod === 1 ? 'day' : 'days'}`
-                      : predictions.nextPeriodDate
-                      ? new Date(predictions.nextPeriodDate).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                        })
-                      : 'Calculating...'}
-                  </Text>
-                </View>
+            {predictions.fertileWindowStart && predictions.fertileWindowEnd && (
+              <View style={[styles.phaseCard, styles.fertilityCard]}>
+                <Text style={styles.phaseCardDateText}>
+                  {new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Text>
+                <Text style={styles.phaseCardLabel}>Fertility Window</Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
-                    source={require('../../assets/images/images/drop_icon.png')}
+                    source={require('../../assets/images/images/heart_icon.png')}
                     style={styles.phaseCardIconImage}
                     resizeMode="contain"
                   />
@@ -677,18 +670,15 @@ export default function ViewerInsightsScreen() {
               </View>
             )}
 
-            {/* Ovulation Card */}
             {predictions.ovulationDate && (
               <View style={[styles.phaseCard, styles.ovulationCard]}>
-                <View style={styles.phaseCardContent}>
-                  <Text style={styles.phaseCardTitle}>Ovulation</Text>
-                  <Text style={styles.phaseCardDate}>
-                    {new Date(predictions.ovulationDate).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </Text>
-                </View>
+                <Text style={styles.phaseCardDateText}>
+                  {new Date(predictions.ovulationDate).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Text>
+                <Text style={styles.phaseCardLabel}>Ovulation</Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
                     source={require('../../assets/images/images/flower_icon.png')}
@@ -699,26 +689,24 @@ export default function ViewerInsightsScreen() {
               </View>
             )}
 
-            {/* Fertility Window Card */}
-            {predictions.fertileWindowStart && predictions.fertileWindowEnd && (
-              <View style={[styles.phaseCard, styles.fertilityCard]}>
-                <View style={styles.phaseCardContent}>
-                  <Text style={styles.phaseCardTitle}>Fertility Window</Text>
-                  <Text style={styles.phaseCardDate}>
-                    {new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}{' '}
-                    -{' '}
-                    {new Date(predictions.fertileWindowEnd).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </Text>
-                </View>
+            {(predictions.nextPeriodDate || isOnPeriod) && (
+              <View style={[styles.phaseCard, styles.periodCard]}>
+                <Text style={styles.phaseCardDateText}>
+                  {isOnPeriod && currentPeriodInfo
+                    ? `Day ${currentPeriodInfo.dayNumber}`
+                    : predictions.nextPeriodDate
+                    ? new Date(predictions.nextPeriodDate).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                      })
+                    : '—'}
+                </Text>
+                <Text style={styles.phaseCardLabel}>
+                  {isOnPeriod ? 'On Period' : 'Next Period'}
+                </Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
-                    source={require('../../assets/images/images/heart_icon.png')}
+                    source={require('../../assets/images/images/drop_icon.png')}
                     style={styles.phaseCardIconImage}
                     resizeMode="contain"
                   />
@@ -874,6 +862,9 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollContent: {
+    paddingBottom: 140,
+  },
   header: {
     padding: 20,
     paddingTop: 10,
@@ -926,59 +917,65 @@ const styles = StyleSheet.create({
   phaseCardsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 20,
-    gap: 12,
+    paddingHorizontal: 16,
+    marginBottom: 24,
+    gap: 10,
   },
   phaseCard: {
     flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    minHeight: 100,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: 22,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: Colors.white,
+    shadowColor: '#F2A0C3',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 3,
+    aspectRatio: 0.95,
   },
   periodCard: {
-    backgroundColor: '#FF174422',
-    borderColor: '#FF174488',
+    backgroundColor: '#FFE6ED',
     borderWidth: 1,
+    borderColor: '#FFC9D8',
   },
   ovulationCard: {
-    backgroundColor: '#4A90E222',
-    borderColor: '#4A90E288',
+    backgroundColor: '#FFEBD9',
     borderWidth: 1,
+    borderColor: '#FFD5B2',
   },
   fertilityCard: {
-    backgroundColor: '#FFC94D22',
-    borderColor: '#FFC94D88',
+    backgroundColor: '#E7ECFF',
     borderWidth: 1,
+    borderColor: '#CBD5FF',
   },
-  phaseCardContent: {
-    flex: 1,
-  },
-  phaseCardTitle: {
-    fontSize: 14,
+  phaseCardDateText: {
+    fontSize: 20,
     fontWeight: '700',
-    color: Colors.text,
-    marginBottom: 6,
+    color: '#1E2432',
+    textAlign: 'center',
   },
-  phaseCardDate: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    lineHeight: 16,
+  phaseCardLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#273041',
+    marginTop: 6,
+    textAlign: 'center',
   },
   phaseCardIcon: {
-    alignItems: 'flex-end',
-    marginTop: 8,
+    marginTop: 12,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   phaseCardIconImage: {
-    width: 40,
-    height: 40,
+    width: 28,
+    height: 28,
   },
   statsContainer: {
     flexDirection: 'row',

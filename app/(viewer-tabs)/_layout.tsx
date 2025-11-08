@@ -34,6 +34,15 @@ export default function ViewerTabLayout() {
         }}
       />
       <Tabs.Screen
+        name="phases"
+        options={{
+          title: 'Cycle Guide',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="book" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="calendar"
         options={{
           title: 'Calendar',

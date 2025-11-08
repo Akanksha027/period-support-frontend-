@@ -467,6 +467,26 @@ export const getUserInfo = async (): Promise<UserInfo | null> => {
   }
 };
 
+export interface RegisterPushTokenPayload {
+  expoPushToken: string;
+  deviceType: string;
+  mode: ViewMode;
+  viewedUserId?: string | null;
+}
+
+export const registerPushToken = async (payload: RegisterPushTokenPayload) => {
+  try {
+    await api.post('/api/notifications/register-token', {
+      expoPushToken: payload.expoPushToken,
+      deviceType: payload.deviceType,
+      mode: payload.mode,
+      viewedUserId: payload.viewedUserId ?? null,
+    });
+  } catch (error) {
+    console.warn('[API] Failed to register push token', error);
+  }
+};
+
 // Settings API functions
 export const getSettings = async (): Promise<UserSettings | null> => {
   try {
@@ -476,6 +496,16 @@ export const getSettings = async (): Promise<UserSettings | null> => {
     if (error.response?.status === 401 || error.response?.status === 404) {
       return null;
     }
+    throw error;
+  }
+};
+
+export const updateSettings = async (settings: Partial<UserSettings>): Promise<UserSettings | null> => {
+  try {
+    const response = await api.put('/api/user/settings', settings);
+    return response.data.settings || response.data || null;
+  } catch (error) {
+    console.error('[API] Failed to update settings', error);
     throw error;
   }
 };
