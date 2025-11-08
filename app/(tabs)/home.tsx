@@ -11,6 +11,7 @@ import {
   DeviceEventEmitter,
   RefreshControl,
   Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -49,6 +50,7 @@ import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import PeriLoader from '../../components/PeriLoader';
+import { Video } from 'expo-av';
 
 const { width } = Dimensions.get('window');
 const CIRCLE_RADIUS = 155;
@@ -88,6 +90,25 @@ export default function HomeScreen() {
   const [reminderEnabled, setReminderEnabled] = useState<boolean>(false);
   const [generatingReminder, setGeneratingReminder] = useState<boolean>(false);
   const loadingRef = useRef(false);
+  const videoRef = useRef<Video | null>(null);
+  const [videoVisible, setVideoVisible] = useState(false);
+  const handleOpenInfoVideo = useCallback(() => {
+    setVideoVisible(true);
+  }, []);
+
+  const handleCloseInfoVideo = useCallback(() => {
+    setVideoVisible(false);
+    if (videoRef.current) {
+      videoRef.current.stopAsync().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!videoVisible && videoRef.current) {
+      videoRef.current.pauseAsync().catch(() => {});
+    }
+  }, [videoVisible]);
+
 
   // Set up token getter
   useEffect(() => {
@@ -550,6 +571,29 @@ export default function HomeScreen() {
       style={styles.gradientContainer}
     >
       <SafeAreaView style={styles.container}>
+        <Modal
+          visible={videoVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={handleCloseInfoVideo}
+        >
+          <View style={styles.videoModalBackdrop}>
+            <View style={styles.videoModalCard}>
+              <Video
+                ref={videoRef}
+                source={require('../../assets/videos/ibuttonvideo.mp4')}
+                style={styles.videoPlayer}
+                resizeMode="contain"
+                useNativeControls
+                shouldPlay
+              />
+              <TouchableOpacity style={styles.videoCloseButton} onPress={handleCloseInfoVideo}>
+                <Ionicons name="close" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -565,7 +609,12 @@ export default function HomeScreen() {
         >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>{greetingText} 👋</Text>
+          <TouchableOpacity style={styles.infoButton} onPress={handleOpenInfoVideo} activeOpacity={0.8}>
+            <View style={styles.infoButtonContent}>
+              <Ionicons name="information" size={18} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+          
           <View style={styles.subtitleRow}>
             <Text style={styles.subtitle}>Track your cycle with </Text>
             <Text style={styles.subtitleScript}>Peri Peri</Text>
@@ -1015,8 +1064,27 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 10,
   },
+  infoButton: {
+    position: 'absolute',
+    top: 12,
+    right: 20,
+    zIndex: 10,
+  },
+  infoButtonContent: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#3D3D3D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
   greeting: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: Colors.text,
     marginBottom: 4,
@@ -1294,6 +1362,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     fontWeight: '500',
+  },
+  videoModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  videoModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#141414',
+    borderRadius: 20,
+    padding: 16,
+    alignItems: 'center',
+  },
+  videoPlayer: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    backgroundColor: '#000',
+  },
+  videoCloseButton: {
+    marginTop: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FF6B9D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 6,
   },
   remindersContainer: {
     paddingHorizontal: 20,

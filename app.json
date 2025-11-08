@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Peri Peri",
+    "slug": "period-tracker",
+    "owner": "akanksha_singh",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.akanksha.periodsupport"
+    },
+    "android": {
+      "package": "com.akanksha.periodsupport",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "86f85ff3-38c4-4004-a5cc-411b4064b931"
+      }
+    }
+  }
+}

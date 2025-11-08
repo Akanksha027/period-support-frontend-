@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
   Image,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -40,6 +41,7 @@ import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
 import PeriLoader from '../../components/PeriLoader';
+import { Video } from 'expo-av';
 
 const formatDisplayName = (value: string) => {
   if (!value) return 'there';
@@ -78,9 +80,28 @@ export default function ViewerInsightsScreen() {
   const [reminderEnabled, setReminderEnabled] = useState<boolean>(false);
   const [generatingReminder, setGeneratingReminder] = useState<boolean>(false);
   const loadingRef = useRef(false);
+  const videoRef = useRef<Video | null>(null);
+  const [videoVisible, setVideoVisible] = useState(false);
 
   const formattedUserName = formatDisplayName(userName);
   const greetingText = `${getTimeGreeting()} ${formattedUserName}!`;
+
+  const handleOpenInfoVideo = useCallback(() => {
+    setVideoVisible(true);
+  }, []);
+
+  const handleCloseInfoVideo = useCallback(() => {
+    setVideoVisible(false);
+    if (videoRef.current) {
+      videoRef.current.stopAsync().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!videoVisible && videoRef.current) {
+      videoRef.current.pauseAsync().catch(() => {});
+    }
+  }, [videoVisible]);
 
   // Set up token getter
   useEffect(() => {
@@ -469,6 +490,11 @@ export default function ViewerInsightsScreen() {
         >
         {/* Header */}
         <View style={styles.header}>
+          <TouchableOpacity style={styles.infoButton} onPress={handleOpenInfoVideo} activeOpacity={0.8}>
+            <View style={styles.infoButtonContent}>
+              <Ionicons name="information" size={18} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
           <Text style={styles.greeting}>{greetingText} 👋</Text>
           <View style={styles.subtitleRow}>
             <Text style={styles.subtitle}>Tracking insights for </Text>
@@ -856,6 +882,29 @@ export default function ViewerInsightsScreen() {
           </View>
         </View>
         </ScrollView>
+
+        <Modal
+          visible={videoVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={handleCloseInfoVideo}
+        >
+          <View style={styles.videoModalBackdrop}>
+            <View style={styles.videoModalCard}>
+              <Video
+                ref={videoRef}
+                source={require('../../assets/videos/ibuttonvideo.mp4')}
+                style={styles.videoPlayer}
+                resizeMode="contain"
+                useNativeControls
+                shouldPlay
+              />
+              <TouchableOpacity style={styles.videoCloseButton} onPress={handleCloseInfoVideo}>
+                <Ionicons name="close" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -884,6 +933,25 @@ const styles = StyleSheet.create({
   header: {
     padding: 20,
     paddingTop: 10,
+  },
+  infoButton: {
+    position: 'absolute',
+    top: 12,
+    right: 20,
+    zIndex: 10,
+  },
+  infoButtonContent: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#3D3D3D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
   greeting: {
     fontSize: 28,
@@ -1259,5 +1327,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
     lineHeight: 20,
+  },
+  videoModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  videoModalCard: {
+    width: '90%',
+    maxWidth: 420,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  videoPlayer: {
+    width: '100%',
+    height: 250,
+  },
+  videoCloseButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
