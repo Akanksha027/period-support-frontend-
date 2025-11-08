@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
-  ActivityIndicator,
   Alert,
   Image,
   DeviceEventEmitter,
@@ -49,10 +48,28 @@ import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
+import PeriLoader from '../../components/PeriLoader';
 
 const { width } = Dimensions.get('window');
 const CIRCLE_RADIUS = 155;
 const SVG_SIZE = 400;
+
+const formatDisplayName = (value: string) => {
+  if (!value) return 'there';
+  return value
+    .trim()
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+};
+
+const getTimeGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+};
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -517,10 +534,13 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <PeriLoader size="large" />
       </View>
     );
   }
+
+  const formattedUserName = formatDisplayName(userName);
+  const greetingText = `${getTimeGreeting()} ${formattedUserName}!`;
 
   return (
     <LinearGradient
@@ -545,7 +565,7 @@ export default function HomeScreen() {
         >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>Welcome, {userName}! 👋</Text>
+          <Text style={styles.greeting}>{greetingText} 👋</Text>
           <View style={styles.subtitleRow}>
             <Text style={styles.subtitle}>Track your cycle with </Text>
             <Text style={styles.subtitleScript}>Peri Peri</Text>
@@ -837,7 +857,7 @@ export default function HomeScreen() {
                 disabled={generatingReminder}
               >
                 {generatingReminder ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
+                  <PeriLoader size={28} />
                 ) : (
                   <>
                     <Ionicons name="refresh" size={16} color={Colors.white} />

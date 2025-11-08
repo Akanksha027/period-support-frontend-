@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Redirect } from 'expo-router';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { View, ActivityIndicator, StyleSheet, Alert } from 'react-native';
+import { Alert } from 'react-native';
 import {
   getUserInfo,
   getSettings,
@@ -12,6 +12,9 @@ import {
   ViewMode,
 } from '../lib/api';
 import { registerForPushNotifications } from '../lib/notifications';
+import SplashScreen from '../components/SplashScreen';
+
+const MIN_SPLASH_DURATION = 2600;
 
 export default function Index() {
   const { isSignedIn, isLoaded, getToken } = useAuth();
@@ -23,6 +26,17 @@ export default function Index() {
   const [modeReady, setModeReady] = useState(false);
   const [viewerAccessRevoked, setViewerAccessRevoked] = useState(false);
   const [initialCheckComplete, setInitialCheckComplete] = useState(false);
+  const [minSplashElapsed, setMinSplashElapsed] = useState(false);
+  const splashTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    splashTimerRef.current = setTimeout(() => setMinSplashElapsed(true), MIN_SPLASH_DURATION);
+    return () => {
+      if (splashTimerRef.current) {
+        clearTimeout(splashTimerRef.current);
+      }
+    };
+  }, []);
 
   // Set up token getter
   useEffect(() => {
@@ -264,13 +278,15 @@ export default function Index() {
     });
   }, [userInfo?.id, userInfo?.userType, userInfo?.viewedUserId, userInfo?.viewedUser?.id, isSignedIn]);
 
-  // Show loading while checking auth state and user type
-  if (!isLoaded || !modeReady || loading || !initialCheckComplete) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+  const shouldShowSplash =
+    !minSplashElapsed ||
+    !isLoaded ||
+    !modeReady ||
+    loading ||
+    !initialCheckComplete;
+
+  if (shouldShowSplash) {
+    return <SplashScreen />;
   }
 
   if (viewerAccessRevoked) {
@@ -304,11 +320,3 @@ export default function Index() {
   // This handles new users who haven't chosen their login type
   return <Redirect href="/choose-login-type" />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});

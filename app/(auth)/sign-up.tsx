@@ -1,9 +1,12 @@
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
 import { useSignUp, useOAuth } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { Link } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import PeriLoader from '../../components/PeriLoader';
 
 export default function SignUpScreen() {
   const { isLoaded, signUp, setActive } = useSignUp();
@@ -13,27 +16,28 @@ export default function SignUpScreen() {
   const [pendingVerification, setPendingVerification] = React.useState(false);
   const [code, setCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
 
-  // OAuth redirect URL
   const redirectUrl = AuthSession.makeRedirectUri({
     path: 'auth/callback',
   });
 
-  // Google OAuth
   const { startOAuthFlow: startGoogleOAuth } = useOAuth({ strategy: 'oauth_google' });
-  
-  // Apple OAuth
   const { startOAuthFlow: startAppleOAuth } = useOAuth({ strategy: 'oauth_apple' });
 
   const handleGoogleSignUp = async () => {
     try {
+      if (!startGoogleOAuth) {
+        Alert.alert('Error', 'Google sign-up is unavailable right now. Please try again later.');
+        return;
+      }
       setLoading(true);
-      const { createdSessionId, setActive } = await startGoogleOAuth({
+      const { createdSessionId, setActive: setOAuthActive } = await startGoogleOAuth({
         redirectUrl,
       });
 
-      if (createdSessionId) {
-        await setActive({ session: createdSessionId });
+      if (createdSessionId && setOAuthActive) {
+        await setOAuthActive({ session: createdSessionId });
         router.replace('/choose-login-type');
       }
     } catch (err: any) {
@@ -46,13 +50,17 @@ export default function SignUpScreen() {
 
   const handleAppleSignUp = async () => {
     try {
+      if (!startAppleOAuth) {
+        Alert.alert('Error', 'Apple sign-up is unavailable right now. Please try again later.');
+        return;
+      }
       setLoading(true);
-      const { createdSessionId, setActive } = await startAppleOAuth({
+      const { createdSessionId, setActive: setOAuthActive } = await startAppleOAuth({
         redirectUrl,
       });
 
-      if (createdSessionId) {
-        await setActive({ session: createdSessionId });
+      if (createdSessionId && setOAuthActive) {
+        await setOAuthActive({ session: createdSessionId });
         router.replace('/choose-login-type');
       }
     } catch (err: any) {
@@ -106,24 +114,72 @@ export default function SignUpScreen() {
 
   if (pendingVerification) {
     return (
-      <View style={styles.container}>
+      <View style={styles.mainContainer}>
+        {/* Top pink gradient section with stars */}
+        <LinearGradient
+          colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
+          style={styles.topGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0.5 }}
+        >
+          {/* Decorative stars - white color */}
+          <View style={styles.starsContainer}>
+            <Text style={[styles.star, styles.star1]}>✦</Text>
+            <Text style={[styles.star, styles.star2]}>✦</Text>
+            <Text style={[styles.star, styles.star3]}>✦</Text>
+          </View>
+
+          {/* Curved white overlay - curves downward */}
+          <View style={styles.curvedOverlay}>
+            <View style={styles.curveShape} />
+          </View>
+        </LinearGradient>
+
+        {/* Bottom white section */}
+        <View style={styles.bottomWhite} />
+
+        {/* Content */}
         <View style={styles.content}>
-          <Text style={styles.title}>Verify your email</Text>
-          <Text style={styles.subtitle}>Enter the verification code sent to your email</Text>
+          <View style={styles.card}>
+            {/* Logo */}
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../../assets/logo.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </View>
 
-          <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              value={code}
-              placeholder="Enter verification code"
-              placeholderTextColor="#999"
-              onChangeText={(code) => setCode(code)}
-              keyboardType="number-pad"
-            />
+            {/* Title */}
+            <Text style={styles.title}>Verify your email</Text>
+            <Text style={styles.subtitle}>Enter the verification code sent to your email</Text>
 
-            <TouchableOpacity style={styles.button} onPress={onVerifyPress}>
-              <Text style={styles.buttonText}>Verify</Text>
-            </TouchableOpacity>
+            {/* Form */}
+            <View style={styles.form}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Verification Code</Text>
+                <TextInput
+                  style={styles.input}
+                  value={code}
+                  placeholder="Enter 6-digit code"
+                  placeholderTextColor="#999"
+                  onChangeText={(code) => setCode(code)}
+                  keyboardType="number-pad"
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.signInButton, loading && styles.buttonDisabled]}
+                onPress={onVerifyPress}
+                disabled={loading}
+              >
+                {loading ? (
+                  <PeriLoader size={32} />
+                ) : (
+                  <Text style={styles.signInButtonText}>Verify</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -131,70 +187,135 @@ export default function SignUpScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.mainContainer}>
+      {/* Top pink gradient section with stars */}
+      <LinearGradient
+        colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
+        style={styles.topGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0.5 }}
+      >
+        {/* Decorative stars - white color */}
+        <View style={styles.starsContainer}>
+          <Text style={[styles.star, styles.star1]}>✦</Text>
+          <Text style={[styles.star, styles.star2]}>✦</Text>
+          <Text style={[styles.star, styles.star3]}>✦</Text>
+        </View>
+
+        {/* Curved white overlay - curves downward */}
+        <View style={styles.curvedOverlay}>
+          <View style={styles.curveShape} />
+        </View>
+      </LinearGradient>
+
+      {/* Bottom white section */}
+      <View style={styles.bottomWhite} />
+
+      {/* Content */}
       <View style={styles.content}>
-        <Text style={styles.title}>Sign Up</Text>
-        <Text style={styles.subtitle}>Create an account to get started</Text>
-
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            autoCapitalize="none"
-            value={emailAddress}
-            placeholder="Enter email"
-            placeholderTextColor="#999"
-            onChangeText={(email) => setEmailAddress(email)}
-            keyboardType="email-address"
-          />
-
-          <TextInput
-            style={styles.input}
-            value={password}
-            placeholder="Enter password"
-            placeholderTextColor="#999"
-            secureTextEntry={true}
-            onChangeText={(password) => setPassword(password)}
-          />
-
-          <TouchableOpacity 
-            style={[styles.button, loading && styles.buttonDisabled]} 
-            onPress={onSignUpPress}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Continue</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
+        <View style={styles.card}>
+          {/* Logo */}
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../../assets/logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
           </View>
 
-          <TouchableOpacity 
-            style={[styles.oauthButton, styles.googleButton]} 
-            onPress={handleGoogleSignUp}
-            disabled={loading}
-          >
-            <Text style={styles.oauthButtonText}>Sign up with Google</Text>
-          </TouchableOpacity>
+          {/* Title */}
+          <Text style={styles.title}>Sign up</Text>
+          <Text style={styles.subtitle}>Create an account to get started</Text>
 
-          <TouchableOpacity 
-            style={[styles.oauthButton, styles.appleButton]} 
-            onPress={handleAppleSignUp}
-            disabled={loading}
-          >
-            <Text style={[styles.oauthButtonText, styles.appleButtonText]}>Sign up with Apple</Text>
-          </TouchableOpacity>
+          {/* Form */}
+          <View style={styles.form}>
+            {/* Email Input */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Email</Text>
+              <TextInput
+                style={styles.input}
+                autoCapitalize="none"
+                value={emailAddress}
+                placeholder="example@gmail.com"
+                placeholderTextColor="#999"
+                onChangeText={(email) => setEmailAddress(email)}
+                keyboardType="email-address"
+              />
+            </View>
 
-          <View style={styles.linkContainer}>
-            <Text style={styles.linkText}>Already have an account? </Text>
-            <Link href="/(auth)/sign-in" style={styles.link}>
-              <Text style={styles.linkTextBold}>Sign in</Text>
-            </Link>
+            {/* Password Input */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={password}
+                  placeholder="••••••••"
+                  placeholderTextColor="#999"
+                  secureTextEntry={!showPassword}
+                  onChangeText={(password) => setPassword(password)}
+                />
+                <TouchableOpacity
+                  style={styles.eyeIcon}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color="#999"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Sign Up Button */}
+            <TouchableOpacity
+              style={[styles.signInButton, loading && styles.buttonDisabled]}
+              onPress={onSignUpPress}
+              disabled={loading}
+            >
+              {loading ? (
+                <PeriLoader size={32} />
+              ) : (
+                <Text style={styles.signInButtonText}>Continue</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or sign up with</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Social Buttons Row */}
+            <View style={styles.socialButtonsRow}>
+              <TouchableOpacity
+                style={styles.socialButton}
+                onPress={handleGoogleSignUp}
+                disabled={loading}
+              >
+                <Ionicons name="logo-google" size={20} color="#DB4437" />
+                <Text style={styles.socialButtonText}>Google</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.socialButton}
+                onPress={handleAppleSignUp}
+                disabled={loading}
+              >
+                <Ionicons name="logo-apple" size={20} color="#000" />
+                <Text style={styles.socialButtonText}>Apple</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sign in link */}
+            <View style={styles.linkContainer}>
+              <Text style={styles.linkText}>Already have an account? </Text>
+              <Link href="/(auth)/sign-in">
+                <Text style={styles.link}>Sign in</Text>
+              </Link>
+            </View>
           </View>
         </View>
       </View>
@@ -203,109 +324,226 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+  },
+  bottomWhite: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '40%',
+    backgroundColor: '#FFFFFF',
+  },
+  curvedOverlay: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 100,
+    overflow: 'hidden',
+  },
+  curveShape: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    transform: [{ scaleY: 1 }],
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50,
+  },
+  starsContainer: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+  },
+  star: {
+    position: 'absolute',
+    fontSize: 16,
+    opacity: 0.6,
+    color: '#FFFFFF',
+  },
+  star1: {
+    top: '25%',
+    right: '20%',
+  },
+  star2: {
+    top: '35%',
+    right: '70%',
+  },
+  star3: {
+    top: '15%',
+    left: '15%',
   },
   content: {
     flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    zIndex: 10,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 28,
+    paddingVertical: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  logoContainer: {
+    width: 80,
+    height: 80,
+    marginBottom: 20,
     justifyContent: 'center',
-    padding: 20,
+    alignItems: 'center',
+  },
+  logo: {
+    width: '200%',
+    height: '200%',
   },
   title: {
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 6,
     color: '#000',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 13,
     color: '#666',
-    marginBottom: 32,
+    marginBottom: 24,
+    textAlign: 'center',
   },
   form: {
     width: '100%',
   },
+  inputContainer: {
+    marginBottom: 14,
+  },
+  inputLabel: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
   input: {
     height: 50,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
     paddingHorizontal: 16,
-    marginBottom: 16,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    fontSize: 15,
+    backgroundColor: '#F9F9F9',
+    color: '#000',
   },
-  button: {
-    backgroundColor: '#007AFF',
-    height: 50,
-    borderRadius: 8,
-    justifyContent: 'center',
+  passwordContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    backgroundColor: '#F9F9F9',
+    paddingHorizontal: 16,
+  },
+  passwordInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#000',
+  },
+  eyeIcon: {
+    padding: 4,
+  },
+  signInButton: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
     marginTop: 8,
+    marginBottom: 16,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
-  buttonText: {
-    color: '#fff',
+  signInButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  divider: {
+  dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    width: '100%',
+    marginVertical: 8,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#ddd',
+    backgroundColor: '#E0E0E0',
   },
   dividerText: {
     marginHorizontal: 16,
     color: '#999',
-    fontSize: 14,
+    fontSize: 13,
   },
-  oauthButton: {
-    height: 50,
-    borderRadius: 8,
-    justifyContent: 'center',
+  socialButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+    marginTop: 8,
+  },
+  socialButton: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#E0E0E0',
+    gap: 8,
   },
-  googleButton: {
-    backgroundColor: '#fff',
-  },
-  appleButton: {
-    backgroundColor: '#000',
-  },
-  oauthButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  socialButtonText: {
     color: '#000',
-  },
-  appleButtonText: {
-    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
   linkContainer: {
     flexDirection: 'row',
+    marginTop: 16,
     justifyContent: 'center',
-    marginTop: 24,
   },
   linkText: {
     color: '#666',
     fontSize: 14,
   },
-  linkTextBold: {
-    color: '#007AFF',
+  link: {
+    color: '#FF6B9D',
     fontSize: 14,
     fontWeight: '600',
   },
-  link: {
-    textDecorationLine: 'underline',
-  },
 });
-

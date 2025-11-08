@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { setViewMode } from '../../lib/api';
 import { clearStoredPushToken } from '../../lib/notifications';
+import PeriLoader from '../../components/PeriLoader';
 
 export default function ViewerProfileScreen() {
   const { signOut } = useAuth();
@@ -50,7 +51,7 @@ export default function ViewerProfileScreen() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color={Colors.white} />
+            <PeriLoader size={32} />
           ) : (
             <Text style={styles.signOutText}>Sign Out</Text>
           )}

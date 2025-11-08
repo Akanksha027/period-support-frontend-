@@ -8,9 +8,8 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
@@ -33,6 +32,7 @@ import {
 import { buildCacheKey, getCachedData, setCachedData } from '@/lib/cache';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { calculatePredictions, getDayInfo, CyclePredictions } from '../../lib/periodCalculations';
+import PeriLoader from '../../components/PeriLoader';
 
 interface Message {
   id: string;
@@ -50,9 +50,12 @@ interface QuickAction {
   template: string;
 }
 
+const TAB_BAR_OFFSET = 78;
+
 export default function ViewerChatScreen() {
   const { user } = useUser();
   const { getToken } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -368,7 +371,7 @@ export default function ViewerChatScreen() {
       try {
         const familyContext = {
           role: 'system',
-          content: `You are "Eira", an empathetic, medically-informed AI family coach. You are speaking with ${viewerName}, who is supporting ${viewedUserFullName}. Offer expert yet compassionate guidance. Use clear language, respect privacy, and reference ${viewedUserFullName}'s cycle data, symptoms, moods, and reminders when relevant. Always frame advice as support for ${viewedUserFullName}, avoiding clinical jargon when possible, and provide next steps the family can take. ${contextSummary}`,
+          content: `You are "Eira", an empathetic, medically-informed AI family coach. Always greet ${viewerName} warmly and make it clear you're talking to them to help interpret ${viewedUserFullName}'s patterns and wellbeing. Use phrases like "${viewedUserFullName} is experiencing..." or "She might feel..."—never imply you are speaking to ${viewedUserFullName} directly. Offer expert yet compassionate guidance, use clear language, respect privacy, and reference ${viewedUserFullName}'s cycle data, symptoms, moods, and reminders when relevant. Always frame advice as supportive actions ${viewerName} and their family can take for ${viewedUserFullName}, avoiding clinical jargon and providing next steps. If real data is missing, never say "can't fetch data"; instead suggest how the family can track observations together and offer caring guidance. ${contextSummary}`,
         };
 
         const messagesArray = [
@@ -421,7 +424,7 @@ export default function ViewerChatScreen() {
   );
 
   const greetingSubtitle = useMemo(() => {
-    return `You're supporting ${viewedUserFullName}. I’ll keep you updated like her care team would.`;
+    return `You're looking after ${viewedUserFullName}. I'll translate her patterns into family-friendly updates for you.`;
   }, [viewedUserFullName]);
 
   return (
@@ -443,35 +446,34 @@ export default function ViewerChatScreen() {
         />
       </View>
 
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { paddingBottom: TAB_BAR_OFFSET + insets.bottom }]}>
         <KeyboardAvoidingView
           style={styles.keyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={90}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 120 : 32}
         >
           {showQuickActions && messages.length === 0 && (
             <View style={styles.greetingSection}>
               <View style={styles.brainIconContainer}>
                 <Ionicons name="sparkles" size={32} color="#9B8EE8" />
               </View>
-              <Text style={styles.greetingText}>Hi {viewerName},</Text>
-              <Text style={styles.helpText}>{`I'm here as ${viewedUserFullName}'s AI family coach.`}</Text>
+              <Text style={styles.greetingText}>Hello {viewerName},</Text>
+              <Text style={styles.helpText}>{`I'll help you understand ${viewedUserFullName}'s cycle and wellbeing.`}</Text>
               <Text style={styles.supportText}>{greetingSubtitle}</Text>
             </View>
           )}
 
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.messagesContainer}
-            contentContainerStyle={[
-              styles.messagesContent,
-              showQuickActions && messages.length === 0 && styles.messagesContentCentered,
-            ]}
-            keyboardShouldPersistTaps="handled"
-          >
-            {showQuickActions && messages.length === 0 ? (
-              <>
-                <Text style={styles.quickActionsTitle}>Things you can do for {viewedUserFullName}</Text>
+          {showQuickActions && messages.length === 0 ? (
+            <View style={styles.quickActionsContainer}>
+              <Text style={styles.quickActionsTitle}>Things you can do for {viewedUserFullName}</Text>
+              <ScrollView
+                style={styles.quickActionsScroll}
+                contentContainerStyle={[
+                  styles.quickActionsWrapper,
+                  { paddingBottom: TAB_BAR_OFFSET + insets.bottom - 20 },
+                ]}
+                showsVerticalScrollIndicator={false}
+              >
                 {quickActions.map((action) => (
                   <TouchableOpacity
                     key={action.id}
@@ -488,8 +490,15 @@ export default function ViewerChatScreen() {
                     </View>
                   </TouchableOpacity>
                 ))}
-              </>
-            ) : (
+              </ScrollView>
+            </View>
+          ) : (
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.messagesContainer}
+              contentContainerStyle={[styles.messagesContent, styles.messagesContentBottom]}
+              keyboardShouldPersistTaps="handled"
+            >
               <>
                 {messages.map((message) => (
                   <View
@@ -510,15 +519,22 @@ export default function ViewerChatScreen() {
                   </View>
                 ))}
                 {loading && (
-                  <View style={[styles.messageContainer, styles.assistantMessage]}>
-                    <ActivityIndicator size="small" color={Colors.primary} />
+                  <View style={[styles.messageContainer, styles.assistantMessage, styles.loaderMessage]}>
+                    <PeriLoader size={110} containerStyle={styles.loaderLottieContainer} />
                   </View>
                 )}
               </>
-            )}
-          </ScrollView>
+            </ScrollView>
+          )}
 
-          <View style={styles.inputContainer}>
+          <View
+            style={[
+              styles.inputContainer,
+              {
+                paddingBottom: Math.max(insets.bottom, 8) + 10,
+              },
+            ]}
+          >
             <TextInput
               style={styles.input}
               value={inputText}
@@ -583,8 +599,8 @@ const styles = StyleSheet.create({
   },
   greetingSection: {
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 10,
+    paddingTop: 24,
+    paddingBottom: 12,
   },
   brainIconContainer: {
     marginBottom: 12,
@@ -611,11 +627,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContent: {
-    padding: 20,
-    paddingBottom: 20,
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: TAB_BAR_OFFSET + 60,
   },
   messagesContentCentered: {
-    paddingTop: 0,
+    justifyContent: 'center',
+  },
+  messagesContentBottom: {
+    justifyContent: 'flex-end',
   },
   quickActionsTitle: {
     fontSize: 18,
@@ -657,6 +678,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
   },
+  quickActionsContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    marginTop: -8,
+  },
+  quickActionsScroll: {
+    maxHeight: 260,
+  },
+  quickActionsWrapper: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+    paddingBottom: 4,
+  },
   messageContainer: {
     maxWidth: '80%',
     marginBottom: 12,
@@ -670,6 +706,13 @@ const styles = StyleSheet.create({
   assistantMessage: {
     alignSelf: 'flex-start',
     backgroundColor: Colors.surface,
+  },
+  loaderMessage: {
+    backgroundColor: 'transparent',
+    padding: 0,
+  },
+  loaderLottieContainer: {
+    backgroundColor: 'transparent',
   },
   messageText: {
     fontSize: 15,
@@ -685,7 +728,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
     backgroundColor: Colors.white,
     borderTopWidth: 1,
     borderTopColor: Colors.border,

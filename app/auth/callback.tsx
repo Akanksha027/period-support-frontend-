@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
+import PeriLoader from '../../components/PeriLoader';
 
 export default function AuthCallback() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function AuthCallback() {
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" />
+      <PeriLoader size="large" />
     </View>
   );
 }

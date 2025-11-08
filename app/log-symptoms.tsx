@@ -7,13 +7,13 @@ import {
   TextInput,
   TouchableOpacity,
   SafeAreaView,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { createSymptom, createMood, getSymptoms, getMoods, Symptom, Mood } from '../lib/api';
+import PeriLoader from '../components/PeriLoader';
 
 const MOOD_OPTIONS = [
   { emoji: '😊', label: 'Calm' },
@@ -225,7 +225,7 @@ export default function LogSymptomsScreen() {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
+            <PeriLoader size="large" />
           </View>
         ) : (
           <>
@@ -280,7 +280,7 @@ export default function LogSymptomsScreen() {
               disabled={saving}
             >
               {saving ? (
-                <ActivityIndicator color={Colors.white} />
+                <PeriLoader size={32} />
               ) : (
                 <Text style={styles.saveButtonText}>Save</Text>
               )}

@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-  ActivityIndicator,
   Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +17,7 @@ import { useAuth, useUser } from '@clerk/clerk-expo';
 import { getSettings, updateSettings, UserSettings, setViewMode } from '../../lib/api';
 import { setClerkTokenGetter } from '../../lib/api';
 import { clearStoredPushToken } from '../../lib/notifications';
+import PeriLoader from '../../components/PeriLoader';
 
 export default function Profile() {
   const { signOut, getToken } = useAuth();
@@ -105,7 +105,7 @@ export default function Profile() {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <PeriLoader size="large" />
       </View>
     );
   }

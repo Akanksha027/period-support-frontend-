@@ -6,14 +6,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useUser, useAuth } from '@clerk/clerk-expo';
 import { api } from '@/lib/api';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import PeriLoader from '../components/PeriLoader';
 
 type Step = 'birthDate' | 'lastPeriod' | 'periodDuration' | 'cycleLength' | 'complete';
 
@@ -114,7 +117,6 @@ export default function OnboardingScreen() {
       });
 
       // Save settings to backend
-      // Include clerkId and email in body AND query params for backend fallback authentication
       const requestBody = {
         birthYear,
         lastPeriodDate: lastPeriod ? lastPeriod.toISOString() : null,
@@ -126,7 +128,6 @@ export default function OnboardingScreen() {
 
       console.log('[Onboarding] Request Body:', JSON.stringify(requestBody, null, 2));
 
-      // Use params option instead of URL query string so axios properly parses it
       const response = await api.patch(
         '/api/user/settings',
         requestBody,
@@ -143,7 +144,6 @@ export default function OnboardingScreen() {
       );
 
       if (response.data.success) {
-        // Navigate to tabs home
         router.replace('/(tabs)/home');
       } else {
         Alert.alert('Error', 'Failed to save settings. Please try again.');
@@ -170,6 +170,9 @@ export default function OnboardingScreen() {
 
   const renderBirthDate = () => (
     <View style={styles.stepContainer}>
+      <View style={styles.iconContainer}>
+        <Ionicons name="calendar" size={48} color="#FF6B9D" />
+      </View>
       <Text style={styles.title}>When were you born?</Text>
       <Text style={styles.subtitle}>We'll use this to personalize your experience</Text>
 
@@ -177,7 +180,8 @@ export default function OnboardingScreen() {
         style={styles.dateButton}
         onPress={() => setShowBirthDatePicker(true)}
       >
-        <Text style={styles.dateButtonText}>
+        <Ionicons name="calendar-outline" size={20} color="#FF6B9D" style={styles.inputIcon} />
+        <Text style={[styles.dateButtonText, !birthDate && styles.placeholderText]}>
           {birthDate ? birthDate.toLocaleDateString() : 'Select birth date'}
         </Text>
       </TouchableOpacity>
@@ -198,7 +202,7 @@ export default function OnboardingScreen() {
       )}
 
       <TouchableOpacity
-        style={[styles.button, styles.buttonPrimary]}
+        style={[styles.button, styles.buttonPrimary, !birthDate && styles.buttonDisabled]}
         onPress={handleNext}
         disabled={!birthDate}
       >
@@ -209,15 +213,19 @@ export default function OnboardingScreen() {
 
   const renderLastPeriod = () => (
     <View style={styles.stepContainer}>
+      <View style={styles.iconContainer}>
+        <Ionicons name="water" size={48} color="#FF6B9D" />
+      </View>
       <Text style={styles.title}>When was your last period?</Text>
       <Text style={styles.subtitle}>This helps us track your cycle accurately</Text>
 
       <TouchableOpacity
-        style={styles.dateButton}
+        style={[styles.dateButton, rememberLastPeriod === false && styles.dateButtonDisabled]}
         onPress={() => setShowLastPeriodPicker(true)}
         disabled={rememberLastPeriod === false}
       >
-        <Text style={styles.dateButtonText}>
+        <Ionicons name="calendar-outline" size={20} color="#FF6B9D" style={styles.inputIcon} />
+        <Text style={[styles.dateButtonText, !lastPeriodDate && styles.placeholderText]}>
           {lastPeriodDate ? lastPeriodDate.toLocaleDateString() : 'Select date'}
         </Text>
       </TouchableOpacity>
@@ -261,21 +269,27 @@ export default function OnboardingScreen() {
 
   const renderPeriodDuration = () => (
     <View style={styles.stepContainer}>
+      <View style={styles.iconContainer}>
+        <Ionicons name="time" size={48} color="#FF6B9D" />
+      </View>
       <Text style={styles.title}>How long do your periods usually last?</Text>
       <Text style={styles.subtitle}>Average is 5 days</Text>
 
-      <TextInput
-        style={[styles.input, rememberPeriodDuration === false && styles.inputDisabled]}
-        placeholder="Enter number of days (e.g., 5)"
-        placeholderTextColor="#999"
-        value={periodDuration}
-        onChangeText={(text) => {
-          setPeriodDuration(text.replace(/[^0-9]/g, ''));
-          setRememberPeriodDuration(true);
-        }}
-        keyboardType="number-pad"
-        editable={rememberPeriodDuration !== false}
-      />
+      <View style={styles.inputWrapper}>
+        <Ionicons name="timer-outline" size={20} color="#FF6B9D" style={styles.inputIcon} />
+        <TextInput
+          style={[styles.input, rememberPeriodDuration === false && styles.inputDisabled]}
+          placeholder="Enter number of days (e.g., 5)"
+          placeholderTextColor="#999"
+          value={periodDuration}
+          onChangeText={(text) => {
+            setPeriodDuration(text.replace(/[^0-9]/g, ''));
+            setRememberPeriodDuration(true);
+          }}
+          keyboardType="number-pad"
+          editable={rememberPeriodDuration !== false}
+        />
+      </View>
 
       <TouchableOpacity
         style={[styles.skipButton, rememberPeriodDuration === false && styles.skipButtonActive]}
@@ -300,21 +314,27 @@ export default function OnboardingScreen() {
 
   const renderCycleLength = () => (
     <View style={styles.stepContainer}>
+      <View style={styles.iconContainer}>
+        <Ionicons name="repeat" size={48} color="#FF6B9D" />
+      </View>
       <Text style={styles.title}>What's your average cycle length?</Text>
       <Text style={styles.subtitle}>Average is 28 days</Text>
 
-      <TextInput
-        style={[styles.input, rememberCycleLength === false && styles.inputDisabled]}
-        placeholder="Enter number of days (e.g., 28)"
-        placeholderTextColor="#999"
-        value={averageCycleLength}
-        onChangeText={(text) => {
-          setAverageCycleLength(text.replace(/[^0-9]/g, ''));
-          setRememberCycleLength(true);
-        }}
-        keyboardType="number-pad"
-        editable={rememberCycleLength !== false}
-      />
+      <View style={styles.inputWrapper}>
+        <Ionicons name="stats-chart-outline" size={20} color="#FF6B9D" style={styles.inputIcon} />
+        <TextInput
+          style={[styles.input, rememberCycleLength === false && styles.inputDisabled]}
+          placeholder="Enter number of days (e.g., 28)"
+          placeholderTextColor="#999"
+          value={averageCycleLength}
+          onChangeText={(text) => {
+            setAverageCycleLength(text.replace(/[^0-9]/g, ''));
+            setRememberCycleLength(true);
+          }}
+          keyboardType="number-pad"
+          editable={rememberCycleLength !== false}
+        />
+      </View>
 
       <TouchableOpacity
         style={[styles.skipButton, rememberCycleLength === false && styles.skipButtonActive]}
@@ -336,7 +356,7 @@ export default function OnboardingScreen() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <PeriLoader size={32} />
           ) : (
             <Text style={styles.buttonText}>Complete Setup</Text>
           )}
@@ -346,83 +366,261 @@ export default function OnboardingScreen() {
   );
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        {/* Progress indicator */}
-        <View style={styles.progressContainer}>
-          <View style={[styles.progressBar, { width: `${((['birthDate', 'lastPeriod', 'periodDuration', 'cycleLength'].indexOf(step) + 1) / 4) * 100}%` }]} />
+    <View style={styles.mainContainer}>
+      {/* Top pink gradient section with stars */}
+      <LinearGradient
+        colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
+        style={styles.topGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0.5 }}
+      >
+        {/* Decorative stars */}
+        <View style={styles.starsContainer}>
+          <Text style={[styles.star, styles.star1]}>✦</Text>
+          <Text style={[styles.star, styles.star2]}>✦</Text>
+          <Text style={[styles.star, styles.star3]}>✦</Text>
         </View>
 
-        {step === 'birthDate' && renderBirthDate()}
-        {step === 'lastPeriod' && renderLastPeriod()}
-        {step === 'periodDuration' && renderPeriodDuration()}
-        {step === 'cycleLength' && renderCycleLength()}
-      </View>
-    </ScrollView>
+        {/* Curved white overlay */}
+        <View style={styles.curvedOverlay}>
+          <View style={styles.curveShape} />
+        </View>
+      </LinearGradient>
+
+      {/* Bottom white section */}
+      <View style={styles.bottomWhite} />
+
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.content}>
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBackground}>
+              <View
+                style={[
+                  styles.progressBar,
+                  {
+                    width: `${((['birthDate', 'lastPeriod', 'periodDuration', 'cycleLength'].indexOf(step) + 1) / 4) * 100}%`,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.progressText}>
+              Step {['birthDate', 'lastPeriod', 'periodDuration', 'cycleLength'].indexOf(step) + 1} of 4
+            </Text>
+          </View>
+
+          <View style={styles.cardShadow}>
+            <View style={styles.card}>
+              <View style={styles.logoContainer}>
+                <Image
+                  source={require('../assets/logo.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              </View>
+
+              {step === 'birthDate' && renderBirthDate()}
+              {step === 'lastPeriod' && renderLastPeriod()}
+              {step === 'periodDuration' && renderPeriodDuration()}
+              {step === 'cycleLength' && renderCycleLength()}
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+  },
+  bottomWhite: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    backgroundColor: '#FFFFFF',
+  },
+  curvedOverlay: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 100,
+    overflow: 'hidden',
+  },
+  curveShape: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    transform: [{ scaleY: 1 }],
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50,
+  },
+  starsContainer: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+  },
+  star: {
+    position: 'absolute',
+    fontSize: 16,
+    opacity: 0.6,
+    color: '#FFFFFF',
+  },
+  star1: {
+    top: '20%',
+    right: '15%',
+  },
+  star2: {
+    top: '30%',
+    right: '70%',
+  },
+  star3: {
+    top: '10%',
+    left: '20%',
+  },
+  scrollView: {
+    flex: 1,
+    zIndex: 10,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 140,
+    paddingBottom: 48,
+    alignItems: 'center',
   },
   content: {
-    flex: 1,
-    padding: 20,
-    paddingTop: 60,
+    width: '100%',
+    alignItems: 'center',
+    gap: 24,
+  },
+  logoContainer: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#FFE8F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    alignSelf: 'center',
+  },
+  logo: {
+    width: '68%',
+    height: '68%',
   },
   progressContainer: {
-    height: 4,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 2,
-    marginBottom: 32,
+    width: '100%',
+    maxWidth: 360,
+    marginBottom: 8,
+  },
+  progressBackground: {
+    height: 6,
+    backgroundColor: '#FFE8F0',
+    borderRadius: 3,
+    marginBottom: 8,
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#007AFF',
-    borderRadius: 2,
+    backgroundColor: '#FF6B9D',
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#FF6B9D',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  card: {
+    borderRadius: 32,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 28,
+    paddingVertical: 34,
   },
   stepContainer: {
     flex: 1,
   },
+  iconContainer: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#FFE8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 18,
+  },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '700',
     marginBottom: 8,
-    color: '#000',
+    color: '#121212',
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 32,
+    fontSize: 14,
+    color: '#6F6F6F',
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   dateButton: {
-    height: 50,
+    height: 48,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: '#F0D9E6',
+    borderRadius: 14,
     paddingHorizontal: 16,
     marginBottom: 16,
     justifyContent: 'center',
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#FAF4F8',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dateButtonDisabled: {
+    backgroundColor: '#F0F0F0',
+    opacity: 0.6,
   },
   dateButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#000',
+    flex: 1,
   },
-  input: {
-    height: 50,
+  placeholderText: {
+    color: '#999',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 48,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: '#F0D9E6',
+    borderRadius: 14,
+    backgroundColor: '#FAF4F8',
     paddingHorizontal: 16,
     marginBottom: 16,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: '#000',
   },
   inputDisabled: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#F0F0F0',
     color: '#999',
   },
   skipButton: {
@@ -430,45 +628,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 24,
     alignItems: 'center',
-  },
-  skipButtonActive: {
-    backgroundColor: '#f0f0f0',
     borderRadius: 8,
   },
+  skipButtonActive: {
+    backgroundColor: '#FFE8F0',
+  },
   skipButtonText: {
-    color: '#007AFF',
-    fontSize: 14,
+    color: '#FF6B9D',
+    fontSize: 13,
     fontWeight: '500',
   },
   buttonRow: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 'auto',
-    paddingTop: 32,
+    marginTop: 20,
   },
   button: {
     flex: 1,
-    height: 50,
-    borderRadius: 8,
+    height: 48,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
   buttonPrimary: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#111111',
+    shadowColor: 'rgba(0,0,0,0.25)',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 8,
   },
   buttonSecondary: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E3E3E3',
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 16,
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '600',
   },
   buttonTextSecondary: {
-    color: '#000',
+    color: '#121212',
+  },
+  cardShadow: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 32,
+    shadowColor: 'rgba(17,17,17,0.16)',
+    shadowOffset: { width: 0, height: 24 },
+    shadowOpacity: 0.28,
+    shadowRadius: 30,
+    elevation: 20,
+    backgroundColor: 'transparent',
   },
 });
-

@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  ActivityIndicator,
   Platform,
   Dimensions,
   RefreshControl,
@@ -33,6 +32,7 @@ import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, g
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
+import PeriLoader from '../../components/PeriLoader';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -128,21 +128,18 @@ export default function ViewerCalendarScreen() {
     return calculatePredictions(periods, settings);
   }, [periods, settings]);
 
-  const loadData = useCallback(async () => {
-    if (loadingDataRef.current) {
-      return;
-    }
+const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boolean } = {}) => {
+  if (loadingDataRef.current) {
+    return;
+  }
 
-    if (!userRef.current || !isSignedInRef.current) {
-      setLoading(false);
-      return;
-    }
+  if (!userRef.current || !isSignedInRef.current) {
+    setLoading(false);
+    return;
+  }
 
-    loadingDataRef.current = true;
-    if (!refreshing) {
-      setLoading(true);
-    }
-    try {
+  loadingDataRef.current = true;
+  try {
       const viewModeRecord = getCurrentViewModeRecord();
       const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
         ? viewModeRecord?.viewedUserId ?? userRef.current?.id
@@ -156,6 +153,8 @@ export default function ViewerCalendarScreen() {
       const periodsCacheKey = buildCacheKey(['viewer-periods', cacheScope]);
       const settingsCacheKey = buildCacheKey(['viewer-settings', cacheScope]);
 
+    let hasCachedSnapshot = false;
+
       const cachedUserInfo = await getCachedData<UserInfo | null>(userInfoCacheKey);
       if (cachedUserInfo !== undefined) {
         setUserInfo(cachedUserInfo);
@@ -165,16 +164,25 @@ export default function ViewerCalendarScreen() {
             'User';
           setViewedUserName(name);
         }
+      hasCachedSnapshot = true;
       }
 
       const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
       if (cachedPeriods !== undefined) {
         setPeriods(cachedPeriods);
+      hasCachedSnapshot = true;
       }
 
       const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
       if (cachedSettings !== undefined) {
         setSettings(cachedSettings);
+      hasCachedSnapshot = true;
+    }
+
+    if (hasCachedSnapshot) {
+      setLoading(false);
+    } else if (!skipSpinner) {
+      setLoading(true);
       }
 
       // Get user info to check if viewing someone else
@@ -213,7 +221,7 @@ export default function ViewerCalendarScreen() {
       setLoading(false);
       loadingDataRef.current = false;
     }
-  }, []);
+}, []);
 
   // Load moods & symptoms for selected date
   const loadLogsForDate = useCallback(async (date: Date) => {
@@ -298,7 +306,7 @@ export default function ViewerCalendarScreen() {
     useCallback(() => {
       if (user && isSignedIn) {
         loadingDataRef.current = false;
-        loadData();
+        loadData({ skipSpinner: true });
       }
   }, [user?.id, isSignedIn, loadData])
   );
@@ -306,7 +314,7 @@ export default function ViewerCalendarScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     loadingDataRef.current = false;
-    await loadData();
+    await loadData({ skipSpinner: true });
     setRefreshing(false);
   }, [loadData]);
 
@@ -428,7 +436,7 @@ export default function ViewerCalendarScreen() {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <PeriLoader size="large" />
       </View>
     );
   }
@@ -604,7 +612,7 @@ export default function ViewerCalendarScreen() {
 
                   {loadingLogs ? (
                     <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="small" color={Colors.primary} />
+                  <PeriLoader size={36} />
                     </View>
                   ) : (
                     <>

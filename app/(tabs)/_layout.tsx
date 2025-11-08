@@ -30,10 +30,12 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       key: 'home',
       icon: 'home-outline',
     },
+    
+   
     {
-      name: 'phases',
-      key: 'phases',
-      icon: 'book-outline',
+      name: 'calendar',
+      key: 'calendar',
+      icon: 'calendar-outline',
     },
     {
       name: 'chat',
@@ -41,9 +43,9 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       icon: 'sparkles-outline',
     },
     {
-      name: 'calendar',
-      key: 'calendar',
-      icon: 'calendar-outline',
+      name: 'phases',
+      key: 'phases',
+      icon: 'book-outline',
     },
     {
       name: 'profile',

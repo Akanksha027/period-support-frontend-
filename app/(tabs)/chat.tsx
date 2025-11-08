@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -17,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { chatWithAI, setClerkTokenGetter } from '../../lib/api';
 import { useAuth, useUser } from '@clerk/clerk-expo';
+import PeriLoader from '../../components/PeriLoader';
 
 interface Message {
   id: string;
@@ -182,17 +182,14 @@ export default function ChatScreen() {
             </View>
           )}
 
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.messagesContainer}
-            contentContainerStyle={[
-              styles.messagesContent,
-              showQuickActions && messages.length === 0 && styles.messagesContentCentered,
-            ]}
-          >
-            {showQuickActions && messages.length === 0 ? (
-              <>
-                <Text style={styles.quickActionsTitle}>Things you can do!</Text>
+          {showQuickActions && messages.length === 0 ? (
+            <View style={styles.quickActionsContainer}>
+              <Text style={styles.quickActionsTitle}>Things you can do!</Text>
+              <ScrollView
+                style={styles.quickActionsScroll}
+                contentContainerStyle={styles.quickActionsWrapper}
+                showsVerticalScrollIndicator={false}
+              >
                 {quickActions.map((action) => (
                   <TouchableOpacity
                     key={action.id}
@@ -209,8 +206,14 @@ export default function ChatScreen() {
                     </View>
                   </TouchableOpacity>
                 ))}
-              </>
-            ) : (
+              </ScrollView>
+            </View>
+          ) : (
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.messagesContainer}
+              contentContainerStyle={[styles.messagesContent, styles.messagesContentBottom]}
+            >
               <>
                 {messages.map((message) => (
                   <View
@@ -231,13 +234,13 @@ export default function ChatScreen() {
                   </View>
                 ))}
                 {loading && (
-                  <View style={[styles.messageContainer, styles.assistantMessage]}>
-                    <ActivityIndicator size="small" color={Colors.primary} />
+                  <View style={[styles.messageContainer, styles.assistantMessage, styles.loaderMessage]}>
+                    <PeriLoader size={110} containerStyle={styles.loaderLottieContainer} />
                   </View>
                 )}
               </>
-            )}
-          </ScrollView>
+            </ScrollView>
+          )}
 
           <View style={styles.inputContainer}>
             <TextInput
@@ -318,11 +321,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContent: {
-    padding: 20,
-    paddingBottom: 20,
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
   },
   messagesContentCentered: {
-    paddingTop: 0,
+    justifyContent: 'center',
+  },
+  messagesContentBottom: {
+    justifyContent: 'flex-end',
   },
   quickActionsTitle: {
     fontSize: 18,
@@ -364,6 +372,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
   },
+  quickActionsContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  quickActionsScroll: {
+    maxHeight: 260,
+  },
+  quickActionsWrapper: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+    paddingBottom: 4,
+  },
   messageContainer: {
     maxWidth: '80%',
     marginBottom: 12,
@@ -377,6 +399,13 @@ const styles = StyleSheet.create({
   assistantMessage: {
     alignSelf: 'flex-start',
     backgroundColor: Colors.surface,
+  },
+  loaderMessage: {
+    backgroundColor: 'transparent',
+    padding: 0,
+  },
+  loaderLottieContainer: {
+    backgroundColor: 'transparent',
   },
   messageText: {
     fontSize: 15,

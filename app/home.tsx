@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useUser, useAuth } from '@clerk/clerk-expo';
 import { Redirect, useRouter } from 'expo-router';
 import { SignOutButton } from '@/components/SignOutButton';
 import { api } from '@/lib/api';
+import PeriLoader from '@/components/PeriLoader';
 
 export default function HomeScreen() {
   const { user, isLoaded: userLoaded } = useUser();
@@ -74,7 +75,7 @@ export default function HomeScreen() {
   if (!authLoaded || !userLoaded || loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" />
+        <PeriLoader size="large" />
       </View>
     );
   }

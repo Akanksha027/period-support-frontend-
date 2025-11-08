@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  ActivityIndicator,
   Alert,
   Platform,
   Dimensions,
@@ -36,6 +35,7 @@ import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, g
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
+import PeriLoader from '../../components/PeriLoader';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -546,7 +546,7 @@ export default function CalendarScreen() {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <PeriLoader size="large" />
       </View>
     );
   }
@@ -732,7 +732,7 @@ export default function CalendarScreen() {
 
               {loadingLogs ? (
                 <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <PeriLoader size={36} />
                 </View>
               ) : (
                 <>

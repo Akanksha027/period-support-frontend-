@@ -6,8 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
-  ActivityIndicator,
   Alert,
+  Platform,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -39,11 +39,24 @@ import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
-import PhaseGuide from '../../components/PhaseGuide';
+import PeriLoader from '../../components/PeriLoader';
 
-// Fallback constants for symptom data
-const safeSymptomOptions: any[] = [];
-const safeSymptomData: any = {};
+const formatDisplayName = (value: string) => {
+  if (!value) return 'there';
+  return value
+    .trim()
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+};
+
+const getTimeGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+};
 
 const { width } = Dimensions.get('window');
 const CIRCLE_RADIUS = 155;
@@ -65,6 +78,9 @@ export default function ViewerInsightsScreen() {
   const [reminderEnabled, setReminderEnabled] = useState<boolean>(false);
   const [generatingReminder, setGeneratingReminder] = useState<boolean>(false);
   const loadingRef = useRef(false);
+
+  const formattedUserName = formatDisplayName(userName);
+  const greetingText = `${getTimeGreeting()} ${formattedUserName}!`;
 
   // Set up token getter
   useEffect(() => {
@@ -433,7 +449,7 @@ export default function ViewerInsightsScreen() {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <PeriLoader size="large" />
       </View>
     );
   }
@@ -453,8 +469,11 @@ export default function ViewerInsightsScreen() {
         >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>Welcome, {userName}! 👋</Text>
-          <Text style={styles.subtitle}>Viewing cycle information</Text>
+          <Text style={styles.greeting}>{greetingText} 👋</Text>
+          <View style={styles.subtitleRow}>
+            <Text style={styles.subtitle}>Tracking insights for </Text>
+            <Text style={styles.subtitleHighlight}>{formattedUserName}</Text>
+          </View>
         </View>
 
         {/* Center Circle */}
@@ -719,12 +738,6 @@ export default function ViewerInsightsScreen() {
           </View>
         )}
 
-        <PhaseGuide
-          predictions={predictions}
-          currentPhase={currentCycleInfo.phaseKey}
-          style={{ marginTop: hasNoPeriodData ? 0 : -4 }}
-        />
-
         {/* Reminders Section */}
         {settings?.reminderEnabled && (
           <View style={styles.remindersContainer}>
@@ -739,7 +752,7 @@ export default function ViewerInsightsScreen() {
                 disabled={generatingReminder}
               >
                 {generatingReminder ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
+                  <PeriLoader size={28} />
                 ) : (
                   <>
                     <Ionicons name="refresh" size={16} color={Colors.white} />
@@ -882,6 +895,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
   },
+  subtitleHighlight: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  subtitleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    marginTop: 2,
+  },
+  subtitleScript: {
+    fontSize: 18,
+    color: Colors.textSecondary,
+    fontFamily: Platform.select({
+      ios: 'Snell Roundhand',
+      android: 'DancingScript-Regular',
+      default: 'cursive',
+    }),
+  },
   circleContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -903,7 +936,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   heartImage: {
-    width: 360,
+    width: 360, // 90% of 400 (circle size)
     height: 360,
     opacity: 0.7,
     tintColor: '#FFC1D6',
@@ -911,26 +944,41 @@ const styles = StyleSheet.create({
   mascotContainer: {
     position: 'absolute',
     top: 125,
-    right: (width - 400) / 2 - 20,
+    right: (width - 400) / 2 - 20, // Adjusted to be right of the circle
     zIndex: 7,
   },
   mascotEmoji: {
     fontSize: 150,
   },
+  logPeriodButtonInside: {
+    position: 'absolute',
+    top: 290, // Position below "Next Period" text, inside circle
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  logPeriodButtonTextInside: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.primary,
+    textDecorationLine: 'underline',
+  },
   phaseCardsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    marginBottom: 24,
+    marginBottom: 20,
     gap: 8,
   },
   phaseCard: {
     flex: 1,
-    minWidth: 130,
+    minWidth: 120,
     height: 128,
     borderRadius: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     backgroundColor: Colors.white,
@@ -969,9 +1017,9 @@ const styles = StyleSheet.create({
   },
   phaseCardIcon: {
     alignSelf: 'flex-end',
-    marginTop: 8,
-    width: 48,
-    height: 48,
+    marginTop: 6,
+    width: 44,
+    height: 44,
     borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.92)',
     justifyContent: 'center',
@@ -985,6 +1033,26 @@ const styles = StyleSheet.create({
   phaseCardIconImage: {
     width: 28,
     height: 28,
+  },
+  symptomsContainer: {
+    padding: 20,
+    paddingTop: 0,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  symptomItem: {
+    backgroundColor: Colors.surface,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  symptomText: {
+    fontSize: 14,
+    color: Colors.text,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -1032,11 +1100,23 @@ const styles = StyleSheet.create({
   viewOnlyLabel: {
     fontSize: 12,
     color: Colors.textSecondary,
-    fontStyle: 'italic',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  logButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     backgroundColor: Colors.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 16,
+  },
+  logButtonText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
   },
   insightsScrollContent: {
     gap: 12,
@@ -1073,7 +1153,6 @@ const styles = StyleSheet.create({
     color: Colors.text,
     textAlign: 'center',
     fontWeight: '500',
-    textTransform: 'capitalize',
   },
   emptyInsightCard: {
     backgroundColor: Colors.white,
@@ -1097,7 +1176,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     fontWeight: '500',
-    textAlign: 'center',
   },
   remindersContainer: {
     paddingHorizontal: 20,

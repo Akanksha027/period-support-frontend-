@@ -1,8 +1,11 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useRouter, Redirect } from 'expo-router';
 import { useUser, useAuth } from '@clerk/clerk-expo';
 import { api, setViewMode, loadStoredViewModeRecord, ViewMode } from '@/lib/api';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import PeriLoader from '../components/PeriLoader';
 
 export default function ChooseLoginTypeScreen() {
   const router = useRouter();
@@ -58,8 +61,26 @@ export default function ChooseLoginTypeScreen() {
       checkingSavedMode,
     });
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" />
+      <View style={styles.mainContainer}>
+        <LinearGradient
+          colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
+          style={styles.topGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0.5 }}
+        >
+          <View style={styles.starsContainer}>
+            <Text style={[styles.star, styles.star1]}>✦</Text>
+            <Text style={[styles.star, styles.star2]}>✦</Text>
+            <Text style={[styles.star, styles.star3]}>✦</Text>
+          </View>
+          <View style={styles.curvedOverlay}>
+            <View style={styles.curveShape} />
+          </View>
+        </LinearGradient>
+        <View style={styles.bottomWhite} />
+        <View style={styles.loadingContainer}>
+          <PeriLoader size="large" />
+        </View>
       </View>
     );
   }
@@ -171,84 +192,236 @@ export default function ChooseLoginTypeScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Choose Login Type</Text>
-        <Text style={styles.subtitle}>How would you like to use this app?</Text>
-
-        <View style={styles.optionsContainer}>
-          <TouchableOpacity style={styles.optionButton} onPress={handleLoginForSelf}>
-            <Text style={styles.optionTitle}>Login for Yourself</Text>
-            <Text style={styles.optionDescription}>
-              Track your own period and symptoms
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.optionButton} onPress={handleLoginForOther}>
-            <Text style={styles.optionTitle}>Login for Someone Else</Text>
-            <Text style={styles.optionDescription}>
-              Track periods for someone else
-            </Text>
-          </TouchableOpacity>
+    <View style={styles.mainContainer}>
+      {/* Top pink gradient section with stars */}
+      <LinearGradient
+        colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
+        style={styles.topGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0.5 }}
+      >
+        {/* Decorative stars - white color */}
+        <View style={styles.starsContainer}>
+          <Text style={[styles.star, styles.star1]}>✦</Text>
+          <Text style={[styles.star, styles.star2]}>✦</Text>
+          <Text style={[styles.star, styles.star3]}>✦</Text>
         </View>
 
-        {user && (
-          <Text style={styles.userInfo}>
-            Signed in as: {user.emailAddresses[0]?.emailAddress}
-          </Text>
-        )}
+        {/* Curved white overlay - curves downward */}
+        <View style={styles.curvedOverlay}>
+          <View style={styles.curveShape} />
+        </View>
+      </LinearGradient>
+
+      {/* Bottom white section */}
+      <View style={styles.bottomWhite} />
+
+      {/* Content */}
+      <View style={styles.content}>
+        <View style={styles.card}>
+          {/* Logo */}
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../assets/logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </View>
+
+          {/* Title */}
+          <Text style={styles.title}>Choose Login Type</Text>
+          <Text style={styles.subtitle}>How would you like to use this app?</Text>
+
+          {/* Options */}
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity style={styles.optionButton} onPress={handleLoginForSelf}>
+              <View style={styles.optionIconContainer}>
+                <Ionicons name="person" size={32} color="#FF6B9D" />
+              </View>
+              <Text style={styles.optionTitle}>Login for Yourself</Text>
+              <Text style={styles.optionDescription}>
+                Track your own period and symptoms
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.optionButton} onPress={handleLoginForOther}>
+              <View style={styles.optionIconContainer}>
+                <Ionicons name="people" size={32} color="#FF6B9D" />
+              </View>
+              <Text style={styles.optionTitle}>Login for Someone Else</Text>
+              <Text style={styles.optionDescription}>
+                Track periods for someone else
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* User Info */}
+          {user && (
+            <Text style={styles.userInfo}>
+              Signed in as: {user.emailAddresses[0]?.emailAddress}
+            </Text>
+          )}
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+  },
+  bottomWhite: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '40%',
+    backgroundColor: '#FFFFFF',
+  },
+  curvedOverlay: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 100,
+    overflow: 'hidden',
+  },
+  curveShape: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    transform: [{ scaleY: 1 }],
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50,
+  },
+  starsContainer: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+  },
+  star: {
+    position: 'absolute',
+    fontSize: 16,
+    opacity: 0.6,
+    color: '#FFFFFF',
+  },
+  star1: {
+    top: '25%',
+    right: '20%',
+  },
+  star2: {
+    top: '35%',
+    right: '70%',
+  },
+  star3: {
+    top: '15%',
+    left: '15%',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   content: {
     flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    zIndex: 10,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 28,
+    paddingVertical: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  logoContainer: {
+    width: 80,
+    height: 80,
+    marginBottom: 20,
     justifyContent: 'center',
-    padding: 20,
+    alignItems: 'center',
+  },
+  logo: {
+    width: '200%',
+    height: '200%',
   },
   title: {
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 6,
     color: '#000',
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 13,
     color: '#666',
-    marginBottom: 48,
+    marginBottom: 28,
     textAlign: 'center',
   },
   optionsContainer: {
-    gap: 16,
+    width: '100%',
+    gap: 14,
+    marginBottom: 20,
   },
   optionButton: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#F9F9F9',
     borderWidth: 2,
-    borderColor: '#007AFF',
-    borderRadius: 12,
-    padding: 24,
+    borderColor: '#FF6B9D',
+    borderRadius: 16,
+    padding: 20,
     alignItems: 'center',
+    shadowColor: '#FF6B9D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  optionIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FFE8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   optionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: '#000',
-    marginBottom: 8,
-  },
-  optionDescription: {
-    fontSize: 14,
-    color: '#666',
+    marginBottom: 6,
     textAlign: 'center',
   },
+  optionDescription: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   userInfo: {
-    marginTop: 32,
+    marginTop: 16,
     fontSize: 12,
     color: '#999',
     textAlign: 'center',
