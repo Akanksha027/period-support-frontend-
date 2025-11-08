@@ -655,10 +655,13 @@ export default function ViewerInsightsScreen() {
               <View style={[styles.phaseCard, styles.fertilityCard]}>
                 <Text style={styles.phaseCardLabel}>Fertility Window</Text>
                 <Text style={styles.phaseCardDateText}>
-                  {new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
+                  {`${new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
-                  })}
+                  })} – ${new Date(predictions.fertileWindowEnd).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })}`}
                 </Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
@@ -953,9 +956,9 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5FF',
   },
   phaseCardDateText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
-    color: '#4B5563',
+    color: '#1E2432',
     textAlign: 'left',
   },
   phaseCardLabel: {

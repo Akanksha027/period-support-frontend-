@@ -483,11 +483,16 @@ export default function ViewerCalendarScreen() {
               const status = getDayStatus(date);
               const isToday = date.toDateString() === new Date().toDateString();
               const hasColor = Boolean(status.color);
+              const actualAlpha = status.phase === 'follicular' ? '55' : '33';
+              const predictedAlpha = status.phase === 'follicular' ? '33' : '20';
+              const borderActualAlpha = status.phase === 'follicular' ? 'CC' : 'AA';
+              const borderPredictedAlpha = status.phase === 'follicular' ? '66' : '40';
+
               const backgroundColor = hasColor
-                ? `${status.color}${status.isPredicted ? '20' : '33'}`
+                ? `${status.color}${status.isPredicted ? predictedAlpha : actualAlpha}`
                 : undefined;
               const borderColor = hasColor
-                ? `${status.color}${status.isPredicted ? '40' : 'AA'}`
+                ? `${status.color}${status.isPredicted ? borderPredictedAlpha : borderActualAlpha}`
                 : undefined;
 
               return (

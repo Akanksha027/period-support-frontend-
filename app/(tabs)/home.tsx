@@ -761,10 +761,13 @@ export default function HomeScreen() {
               <View style={[styles.phaseCard, styles.fertilityCard]}>
                 <Text style={styles.phaseCardLabel}>Fertility Window</Text>
                 <Text style={styles.phaseCardDateText}>
-                  {new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
+                  {`${new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
-                  })}
+                  })} – ${new Date(predictions.fertileWindowEnd).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })}`}
                 </Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
@@ -898,8 +901,8 @@ export default function HomeScreen() {
                   onPress={() => {
                     router.push({
                       pathname: '/(tabs)/chat',
-                      params: { 
-                        initialMessage: `I'm feeling ${mood.type} today. Can you help me understand this?`,
+                      params: {
+                        initialMessage: `I am feeling ${mood.type} today.`,
                       },
                     });
                   }}
@@ -919,8 +922,8 @@ export default function HomeScreen() {
                   onPress={() => {
                     router.push({
                       pathname: '/(tabs)/chat',
-                      params: { 
-                        initialMessage: `I'm experiencing ${symptom.type} today. Can you help me?`,
+                      params: {
+                        initialMessage: `I am having ${symptom.type} today.`,
                       },
                     });
                   }}
@@ -1076,11 +1079,11 @@ const styles = StyleSheet.create({
   },
   phaseCard: {
     flex: 1,
-    minWidth: 130,
+    minWidth: 120,
     height: 128,
     borderRadius: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     backgroundColor: Colors.white,
@@ -1106,9 +1109,9 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5FF',
   },
   phaseCardDateText: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#4B5563',
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1E2432',
     textAlign: 'left',
   },
   phaseCardLabel: {
