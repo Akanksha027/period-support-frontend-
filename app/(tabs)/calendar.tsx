@@ -685,7 +685,11 @@ export default function CalendarScreen() {
           />
           <View style={styles.bottomSheet}>
             <View style={styles.bottomSheetHandle} />
-            <ScrollView style={styles.bottomSheetContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.bottomSheetContent}
+              contentContainerStyle={styles.bottomSheetScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
               {/* Date Header */}
               <Text style={styles.bottomSheetTitle}>
                 {selectedDate?.toLocaleDateString('en-US', {
@@ -756,43 +760,42 @@ export default function CalendarScreen() {
                   </View>
                 </>
               )}
-
-              {/* Action Buttons */}
-              <View style={styles.actionButtonsContainer}>
-                {isFirstDayOfPeriod && selectedDatePeriod && (
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => {
-                      handleDeletePeriod(selectedDatePeriod.id);
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={20} color={Colors.white} />
-                    <Text style={styles.deleteButtonText}>Delete Period</Text>
-                  </TouchableOpacity>
-                )}
-
-                {canLogPeriod && (
-                  <TouchableOpacity
-                    style={styles.logPeriodButton}
-                    onPress={() => {
-                      setNewPeriodDate(selectedDate!);
-                      handleAddPeriod(selectedDate!);
-                    }}
-                  >
-                    <Ionicons name="add-circle-outline" size={20} color={Colors.white} />
-                    <Text style={styles.logPeriodButtonText}>Log Period</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Close Button */}
+            </ScrollView>
+            <View style={styles.bottomActionArea}>
+              {(isFirstDayOfPeriod && selectedDatePeriod) || canLogPeriod ? (
+                <View style={styles.primaryActionsRow}>
+                  {isFirstDayOfPeriod && selectedDatePeriod && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.deleteButton]}
+                      onPress={() => {
+                        handleDeletePeriod(selectedDatePeriod.id);
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={20} color={Colors.white} />
+                      <Text style={styles.deleteButtonText}>Delete</Text>
+                    </TouchableOpacity>
+                  )}
+                  {canLogPeriod && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.logPeriodButton]}
+                      onPress={() => {
+                        setNewPeriodDate(selectedDate!);
+                        handleAddPeriod(selectedDate!);
+                      }}
+                    >
+                      <Ionicons name="add-circle-outline" size={20} color={Colors.white} />
+                      <Text style={styles.logPeriodButtonText}>Log Period</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ) : null}
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setSelectedDate(null)}
               >
                 <Text style={styles.closeButtonText}>Close</Text>
               </TouchableOpacity>
-            </ScrollView>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1044,7 +1047,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   bottomSheetContent: {
-    padding: 20,
+    flex: 1,
+  },
+  bottomSheetScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
   },
   bottomSheetTitle: {
     fontSize: 24,
@@ -1122,13 +1129,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   deleteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#FF3B30',
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 4,
   },
   deleteButtonText: {
     color: Colors.white,
@@ -1136,13 +1142,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   logPeriodButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: Colors.primary,
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
   },
   logPeriodButtonText: {
     color: Colors.white,
@@ -1150,11 +1155,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   closeButton: {
-    backgroundColor: Colors.surface,
-    padding: 16,
+    paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
   closeButtonText: {
     color: Colors.text,
@@ -1201,5 +1207,26 @@ const styles = StyleSheet.create({
   confirmButtonText: {
     color: Colors.white,
     fontWeight: '600',
+  },
+  bottomActionArea: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+    gap: 12,
+  },
+  primaryActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
   },
 });

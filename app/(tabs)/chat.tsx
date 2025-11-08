@@ -162,21 +162,13 @@ export default function ChatScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Gradient border lines - orange to pink/purple */}
-      <View style={styles.gradientBorderLeft} pointerEvents="none">
+      {/* Gradient accent along the bottom edge */}
+      <View style={styles.gradientBarContainer} pointerEvents="none">
         <LinearGradient
           colors={['#FF6B35', '#FF8E53', '#FFB3B3', '#E8B4F0', '#C8A2F0']}
           start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.gradientLine}
-        />
-      </View>
-      <View style={styles.gradientBorderRight} pointerEvents="none">
-        <LinearGradient
-          colors={['#FF6B35', '#FF8E53', '#FFB3B3', '#E8B4F0', '#C8A2F0']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.gradientLine}
+          end={{ x: 1, y: 0 }}
+          style={styles.gradientBar}
         />
       </View>
 
@@ -291,25 +283,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     position: 'relative',
   },
-  gradientBorderLeft: {
+  gradientBarContainer: {
     position: 'absolute',
     left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
-    zIndex: 1000,
-  },
-  gradientBorderRight: {
-    position: 'absolute',
     right: 0,
-    top: 0,
     bottom: 0,
-    width: 3,
+    height: 12,
     zIndex: 1000,
   },
-  gradientLine: {
+  gradientBar: {
     flex: 1,
-    width: '100%',
   },
   safeArea: {
     flex: 1,
