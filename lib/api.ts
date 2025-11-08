@@ -234,6 +234,9 @@ api.interceptors.request.use(
     }
 
     config.headers = config.headers || {};
+    const timezoneOffset = new Date().getTimezoneOffset();
+    config.headers['X-Timezone-Offset'] = String(timezoneOffset);
+
     if (currentViewModeRecord?.mode) {
       config.headers['X-View-Mode'] = currentViewModeRecord.mode;
     } else if (config.headers['X-View-Mode']) {

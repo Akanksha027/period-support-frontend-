@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -102,6 +103,7 @@ export default function ViewerCalendarScreen() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [viewedUserName, setViewedUserName] = useState<string>('');
+  const [refreshing, setRefreshing] = useState(false);
 
   // Use refs to avoid infinite loops
   const userRef = useRef(user);
@@ -137,7 +139,9 @@ export default function ViewerCalendarScreen() {
     }
 
     loadingDataRef.current = true;
-    setLoading(true);
+    if (!refreshing) {
+      setLoading(true);
+    }
     try {
       const viewModeRecord = getCurrentViewModeRecord();
       const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
@@ -296,8 +300,15 @@ export default function ViewerCalendarScreen() {
         loadingDataRef.current = false;
         loadData();
       }
-    }, [user?.id, isSignedIn, loadData])
+  }, [user?.id, isSignedIn, loadData])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    loadingDataRef.current = false;
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
   const getDaysInMonth = useCallback((date: Date) => {
     const year = date.getFullYear();
@@ -319,7 +330,65 @@ export default function ViewerCalendarScreen() {
 
   const getDayStatus = useCallback(
     (date: Date) => {
-      const detail = getPhaseDetailsForDate(date, periods, predictions, settings);
+      const normalizedDate = new Date(date);
+      normalizedDate.setHours(0, 0, 0, 0);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const startOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      const startOfFollowingMonth = new Date(today.getFullYear(), today.getMonth() + 2, 1);
+
+      const monthKey = new Date(normalizedDate.getFullYear(), normalizedDate.getMonth(), 1);
+      const isCurrentMonth = monthKey.getTime() === startOfCurrentMonth.getTime();
+      const isNextMonth = monthKey.getTime() === startOfNextMonth.getTime();
+      const isBeforeCurrentMonth = monthKey.getTime() < startOfCurrentMonth.getTime();
+      const isBeyondNextMonth = monthKey.getTime() >= startOfFollowingMonth.getTime();
+
+      const fallbackPeriodLength = Math.max(1, predictions?.periodLength || settings?.averagePeriodLength || 5);
+
+      const isActualPeriodDay = periods.some((period) => {
+        const start = new Date(period.startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = period.endDate
+          ? new Date(period.endDate)
+          : (() => {
+              const assumed = new Date(period.startDate);
+              assumed.setHours(0, 0, 0, 0);
+              assumed.setDate(assumed.getDate() + fallbackPeriodLength - 1);
+              return assumed;
+            })();
+        end.setHours(0, 0, 0, 0);
+        return normalizedDate.getTime() >= start.getTime() && normalizedDate.getTime() <= end.getTime();
+      });
+
+      if (isActualPeriodDay) {
+        return { phase: 'menstrual' as PhaseKey, color: PHASE_PALETTE.menstrual.color, isPredicted: false };
+      }
+
+      if (isBeforeCurrentMonth || isBeyondNextMonth) {
+        return { phase: null, color: null, isPredicted: false };
+      }
+
+      let allowPredicted = false;
+      if (isCurrentMonth) {
+        allowPredicted = true;
+      } else if (isNextMonth) {
+        if (!predictions.nextPeriodDate) {
+          allowPredicted = true;
+        } else {
+          const nextPeriod = new Date(predictions.nextPeriodDate);
+          nextPeriod.setHours(0, 0, 0, 0);
+          allowPredicted = normalizedDate.getTime() <= nextPeriod.getTime();
+        }
+      }
+
+      if (!allowPredicted) {
+        return { phase: null, color: null, isPredicted: false };
+      }
+
+      const detail = getPhaseDetailsForDate(normalizedDate, periods, predictions, settings);
       const meta = PHASE_PALETTE[detail.phase];
       return { phase: detail.phase, color: meta.color, isPredicted: detail.isPredicted };
     },
@@ -347,6 +416,15 @@ export default function ViewerCalendarScreen() {
 
   const days = getDaysInMonth(currentMonth);
 
+  const todaysLabel = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }, []);
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -356,39 +434,46 @@ export default function ViewerCalendarScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Calendar for {viewedUserName}</Text>
-          <Text style={styles.subtitle}>View cycle and period information</Text>
+    <SafeAreaView style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
+        <View style={styles.headerBlock}>
+          <Text style={styles.headerTitle}>Calendar</Text>
+          <Text style={styles.headerSubtitle}>Viewing {viewedUserName}</Text>
+          <Text style={styles.headerDate}>{todaysLabel}</Text>
         </View>
 
-        {/* Month Navigation */}
-        <View style={styles.monthNav}>
-          <TouchableOpacity onPress={() => navigateMonth('prev')} style={styles.navButton}>
-            <Ionicons name="chevron-back" size={24} color={Colors.primary} />
-          </TouchableOpacity>
-          <Text style={styles.monthText}>
-            {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-          </Text>
-          <TouchableOpacity onPress={() => navigateMonth('next')} style={styles.navButton}>
-            <Ionicons name="chevron-forward" size={24} color={Colors.primary} />
-          </TouchableOpacity>
-        </View>
+        <View style={styles.calendarCard}>
+          <View style={styles.monthRow}>
+            <TouchableOpacity onPress={() => navigateMonth('prev')} style={styles.monthButton}>
+              <Ionicons name="chevron-back" size={20} color={Colors.primary} />
+            </TouchableOpacity>
+            <Text style={styles.monthLabel}>
+              {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </Text>
+            <TouchableOpacity onPress={() => navigateMonth('next')} style={styles.monthButton}>
+              <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
 
-        {/* Calendar Grid */}
-        <View style={styles.calendarContainer}>
-          {/* Day Headers */}
-          <View style={styles.dayHeaders}>
+          <View style={styles.dayLabelsRow}>
             {DAYS.map((day) => (
-              <View key={day} style={styles.dayHeader}>
-                <Text style={styles.dayHeaderText}>{day}</Text>
-              </View>
+              <Text key={day} style={styles.dayLabel}>
+                {day}
+              </Text>
             ))}
           </View>
 
-          {/* Calendar Days */}
           <View style={styles.calendarGrid}>
             {days.map((date, index) => {
               if (!date) {
@@ -397,23 +482,28 @@ export default function ViewerCalendarScreen() {
 
               const status = getDayStatus(date);
               const isToday = date.toDateString() === new Date().toDateString();
-              const backgroundColor = `${status.color}${status.isPredicted ? '22' : '66'}`;
-              const borderColor = `${status.color}${status.isPredicted ? '33' : 'AA'}`;
+              const hasColor = Boolean(status.color);
+              const backgroundColor = hasColor
+                ? `${status.color}${status.isPredicted ? '20' : '33'}`
+                : undefined;
+              const borderColor = hasColor
+                ? `${status.color}${status.isPredicted ? '40' : 'AA'}`
+                : undefined;
 
               return (
                 <TouchableOpacity
                   key={date.toISOString()}
                   style={[
                     styles.dayCell,
-                    { backgroundColor, borderColor },
-                    isToday && styles.todayDay,
+                    hasColor && { backgroundColor, borderColor },
+                    isToday && styles.todayCell,
                   ]}
                   onPress={() => handleDatePress(date)}
                 >
                   <Text
                     style={[
                       styles.dayText,
-                      !status.isPredicted && styles.dayTextOnPhase,
+                      hasColor && !status.isPredicted && styles.dayTextOnPhase,
                       isToday && styles.todayText,
                     ]}
                   >
@@ -423,24 +513,46 @@ export default function ViewerCalendarScreen() {
               );
             })}
           </View>
-        </View>
 
-        {/* Legend */}
-        <View style={styles.legend}>
-          {(['menstrual', 'follicular', 'ovulation', 'luteal'] as PhaseKey[]).map((phaseKey) => {
-            const palette = PHASE_PALETTE[phaseKey];
-            return (
-              <View key={phaseKey} style={styles.legendItem}>
-                <View style={[styles.legendColor, { backgroundColor: palette.color }]} />
-                <Text style={styles.legendText}>{palette.shortLabel}</Text>
-              </View>
-            );
-          })}
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#999999' }]} />
-            <Text style={styles.legendText}>Predicted tint</Text>
+          <View style={styles.legendRow}>
+            {(['menstrual', 'follicular', 'ovulation', 'luteal'] as PhaseKey[]).map((phaseKey) => {
+              const palette = PHASE_PALETTE[phaseKey];
+              return (
+                <View key={phaseKey} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: palette.color }]} />
+                  <Text style={styles.legendText}>{palette.shortLabel}</Text>
+                </View>
+              );
+            })}
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#999999' }]} />
+              <Text style={styles.legendText}>Predicted tint</Text>
+            </View>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={styles.logPromptCard}
+          activeOpacity={0.85}
+          onPress={() => handleDatePress(new Date())}
+        >
+          <View style={styles.logPromptHeader}>
+            <Text style={styles.logPromptTitle}>Review today&apos;s notes</Text>
+            <Ionicons name="chevron-forward" size={18} color={Colors.white} />
+          </View>
+          <Text style={styles.logPromptSubtitle}>
+            Tap to check {viewedUserName}&apos;s latest symptoms & moods
+          </Text>
+          <View style={styles.moodDotsRow}>
+            {[0, 1, 2, 3, 4].map((index) => (
+              <View
+                // eslint-disable-next-line react/no-array-index-key
+                key={`viewer-mood-dot-${index}`}
+                style={[styles.moodDot, { opacity: 0.35 + index * 0.15 }]}
+              />
+            ))}
+          </View>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Date Detail Modal */}
@@ -535,62 +647,80 @@ export default function ViewerCalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: '#FFF7FA',
+  },
+  contentContainer: {
+    paddingTop: 16,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    gap: 24,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: '#FFF7FA',
   },
-  scrollView: {
-    flex: 1,
+  headerBlock: {
+    gap: 4,
   },
-  header: {
-    padding: 20,
-    paddingBottom: 10,
-  },
-  title: {
+  headerTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: Colors.text,
-    marginBottom: 4,
   },
-  subtitle: {
+  headerSubtitle: {
     fontSize: 14,
+    fontWeight: '600',
     color: Colors.textSecondary,
   },
-  monthNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  navButton: {
-    padding: 8,
-  },
-  monthText: {
-    fontSize: 18,
+  headerDate: {
+    fontSize: 12,
     fontWeight: '600',
+    color: '#D16D8A',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  calendarCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 28,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  monthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  monthButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 107, 157, 0.12)',
+  },
+  monthLabel: {
+    fontSize: 18,
+    fontWeight: '700',
     color: Colors.text,
   },
-  calendarContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  dayHeaders: {
+  dayLabelsRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    marginTop: 24,
+    marginBottom: 12,
   },
-  dayHeader: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  dayHeaderText: {
+  dayLabel: {
+    width: `${100 / 7}%`,
+    textAlign: 'center',
     fontSize: 12,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -602,14 +732,14 @@ const styles = StyleSheet.create({
   dayCell: {
     width: `${100 / 7}%`,
     aspectRatio: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 10,
-    margin: 3,
+    borderRadius: 14,
+    marginBottom: 12,
   },
-  todayDay: {
+  todayCell: {
     borderWidth: 2,
     borderColor: Colors.primary,
   },
@@ -623,29 +753,67 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   todayText: {
-    fontWeight: 'bold',
+    fontWeight: '700',
+    color: Colors.primary,
   },
-  legend: {
+  legendRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     flexWrap: 'wrap',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    gap: 16,
+    marginTop: 16,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginRight: 16,
+    marginBottom: 8,
   },
-  legendColor: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
+  legendDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
   },
   legendText: {
     fontSize: 12,
     color: Colors.textSecondary,
+  },
+  logPromptCard: {
+    backgroundColor: Colors.primary,
+    borderRadius: 28,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+    gap: 12,
+  },
+  logPromptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  logPromptTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  logPromptSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  moodDotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  moodDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   modalOverlay: {
     flex: 1,

@@ -11,6 +11,7 @@ import {
   Platform,
   Dimensions,
   DeviceEventEmitter,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -105,6 +106,16 @@ export default function CalendarScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newPeriodDate, setNewPeriodDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [refreshing, setRefreshing] = useState(false);
+
+  const todaysLabel = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }, []);
 
   // Use refs to avoid infinite loops
   const userRef = useRef(user);
@@ -139,10 +150,9 @@ export default function CalendarScreen() {
       setLoading(false);
       return;
     }
-
     loadingDataRef.current = true;
 
-    let showSpinner = true;
+    let showSpinner = !refreshing;
 
     try {
       const viewModeRecord = getCurrentViewModeRecord();
@@ -188,7 +198,7 @@ export default function CalendarScreen() {
       setLoading(false);
       loadingDataRef.current = false;
     }
-  }, []);
+  }, [refreshing]);
 
   // Load moods & symptoms for selected date
   const loadLogsForDate = useCallback(async (date: Date) => {
@@ -298,7 +308,65 @@ export default function CalendarScreen() {
 
   const getDayStatus = useCallback(
     (date: Date) => {
-      const detail = getPhaseDetailsForDate(date, periods, predictions, settings);
+      const normalizedDate = new Date(date);
+      normalizedDate.setHours(0, 0, 0, 0);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const startOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      const startOfFollowingMonth = new Date(today.getFullYear(), today.getMonth() + 2, 1);
+
+      const monthKey = new Date(normalizedDate.getFullYear(), normalizedDate.getMonth(), 1);
+      const isCurrentMonth = monthKey.getTime() === startOfCurrentMonth.getTime();
+      const isNextMonth = monthKey.getTime() === startOfNextMonth.getTime();
+      const isBeforeCurrentMonth = monthKey.getTime() < startOfCurrentMonth.getTime();
+      const isBeyondNextMonth = monthKey.getTime() >= startOfFollowingMonth.getTime();
+
+      const fallbackPeriodLength = Math.max(1, predictions?.periodLength || settings?.averagePeriodLength || 5);
+
+      const isActualPeriodDay = periods.some((period) => {
+        const start = new Date(period.startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = period.endDate
+          ? new Date(period.endDate)
+          : (() => {
+              const assumed = new Date(period.startDate);
+              assumed.setHours(0, 0, 0, 0);
+              assumed.setDate(assumed.getDate() + fallbackPeriodLength - 1);
+              return assumed;
+            })();
+        end.setHours(0, 0, 0, 0);
+        return normalizedDate.getTime() >= start.getTime() && normalizedDate.getTime() <= end.getTime();
+      });
+
+      if (isActualPeriodDay) {
+        return { phase: 'menstrual' as PhaseKey, color: PHASE_PALETTE.menstrual.color, isPredicted: false };
+      }
+
+      if (isBeforeCurrentMonth || isBeyondNextMonth) {
+        return { phase: null, color: null, isPredicted: false };
+      }
+
+      let allowPredicted = false;
+      if (isCurrentMonth) {
+        allowPredicted = true;
+      } else if (isNextMonth) {
+        if (!predictions.nextPeriodDate) {
+          allowPredicted = true;
+        } else {
+          const nextPeriod = new Date(predictions.nextPeriodDate);
+          nextPeriod.setHours(0, 0, 0, 0);
+          allowPredicted = normalizedDate.getTime() <= nextPeriod.getTime();
+        }
+      }
+
+      if (!allowPredicted) {
+        return { phase: null, color: null, isPredicted: false };
+      }
+
+      const detail = getPhaseDetailsForDate(normalizedDate, periods, predictions, settings);
       const meta = PHASE_PALETTE[detail.phase];
       return { phase: detail.phase, color: meta.color, isPredicted: detail.isPredicted };
     },
@@ -468,6 +536,13 @@ export default function CalendarScreen() {
     return selected <= today && !selectedDatePeriod;
   }, [selectedDate, selectedDatePeriod]);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    loadingDataRef.current = false;
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -477,81 +552,122 @@ export default function CalendarScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={prevMonth} style={styles.navButton}>
-          <Ionicons name="chevron-back" size={24} color={Colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.monthTitle}>
-          {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-        </Text>
-        <TouchableOpacity onPress={nextMonth} style={styles.navButton}>
-          <Ionicons name="chevron-forward" size={24} color={Colors.text} />
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
+        <View style={styles.headerBlock}>
+          <Text style={styles.headerTitle}>Calendar</Text>
+          <Text style={styles.headerSubtitle}>{todaysLabel}</Text>
+        </View>
 
-      <ScrollView style={styles.scrollView}>
-        {/* Day labels */}
-        <View style={styles.dayLabels}>
-          {DAYS.map((day) => (
-            <Text key={day} style={styles.dayLabel}>
-              {day}
+        <View style={styles.calendarCard}>
+          <View style={styles.monthRow}>
+            <TouchableOpacity onPress={prevMonth} style={styles.monthButton}>
+              <Ionicons name="chevron-back" size={20} color={Colors.primary} />
+            </TouchableOpacity>
+            <Text style={styles.monthLabel}>
+              {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </Text>
-          ))}
-        </View>
+            <TouchableOpacity onPress={nextMonth} style={styles.monthButton}>
+              <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
 
-        {/* Calendar grid */}
-        <View style={styles.calendarGrid}>
-          {days.map((date, index) => {
-            if (!date) {
-              return <View key={`empty-${index}`} style={styles.dayCell} />;
-            }
+          <View style={styles.dayLabelsRow}>
+            {DAYS.map((day) => (
+              <Text key={day} style={styles.dayLabel}>
+                {day}
+              </Text>
+            ))}
+          </View>
 
-            const status = getDayStatus(date);
-            const isToday = date.toDateString() === new Date().toDateString();
-            const backgroundColor = `${status.color}${status.isPredicted ? '22' : '66'}`;
-            const borderColor = `${status.color}${status.isPredicted ? '33' : 'AA'}`;
+          <View style={styles.calendarGrid}>
+            {days.map((date, index) => {
+              if (!date) {
+                return <View key={`empty-${index}`} style={styles.dayCell} />;
+              }
 
-            return (
-              <TouchableOpacity
-                key={date.toISOString()}
-                style={[
-                  styles.dayCell,
-                  isToday && styles.todayCell,
-                  { backgroundColor, borderColor },
-                ]}
-                onPress={() => handleDatePress(date)}
-              >
-                <Text
+              const status = getDayStatus(date);
+              const isToday = date.toDateString() === new Date().toDateString();
+              const hasColor = Boolean(status.color);
+              const backgroundColor = hasColor
+                ? `${status.color}${status.isPredicted ? '20' : '33'}`
+                : undefined;
+              const borderColor = hasColor
+                ? `${status.color}${status.isPredicted ? '40' : 'AA'}`
+                : undefined;
+
+              return (
+                <TouchableOpacity
+                  key={date.toISOString()}
                   style={[
-                    styles.dayText,
-                    isToday && styles.todayText,
-                    !status.isPredicted && styles.dayTextOnPhase,
+                    styles.dayCell,
+                    isToday && styles.todayCell,
+                    hasColor && { backgroundColor, borderColor },
                   ]}
+                  onPress={() => handleDatePress(date)}
                 >
-                  {date.getDate()}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                  <Text
+                    style={[
+                      styles.dayText,
+                      isToday && styles.todayText,
+                      hasColor && !status.isPredicted && styles.dayTextOnPhase,
+                    ]}
+                  >
+                    {date.getDate()}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        {/* Legend */}
-        <View style={styles.legend}>
-          {(['menstrual', 'follicular', 'ovulation', 'luteal'] as PhaseKey[]).map((phaseKey) => {
-            const palette = PHASE_PALETTE[phaseKey];
-            return (
-              <View key={phaseKey} style={styles.legendItem}>
-                <View style={[styles.legendColor, { backgroundColor: palette.color }]} />
-                <Text style={styles.legendText}>{palette.shortLabel}</Text>
-              </View>
-            );
-          })}
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#999999' }]} />
-            <Text style={styles.legendText}>Predicted tint</Text>
+          <View style={styles.legendRow}>
+            {(['menstrual', 'follicular', 'ovulation', 'luteal'] as PhaseKey[]).map((phaseKey) => {
+              const palette = PHASE_PALETTE[phaseKey];
+              return (
+                <View key={phaseKey} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: palette.color }]} />
+                  <Text style={styles.legendText}>{palette.shortLabel}</Text>
+                </View>
+              );
+            })}
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#999999' }]} />
+              <Text style={styles.legendText}>Predicted tint</Text>
+            </View>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={styles.logPromptCard}
+          activeOpacity={0.85}
+          onPress={() => handleDatePress(new Date())}
+        >
+          <View style={styles.logPromptHeader}>
+            <Text style={styles.logPromptTitle}>Add mood, symptoms & notes</Text>
+            <Ionicons name="chevron-forward" size={18} color={Colors.white} />
+          </View>
+          <Text style={styles.logPromptSubtitle}>Tap to open today&apos;s entry</Text>
+          <View style={styles.moodDotsRow}>
+            {[0, 1, 2, 3, 4].map((index) => (
+              <View
+                // eslint-disable-next-line react/no-array-index-key
+                key={`mood-dot-${index}`}
+                style={[styles.moodDot, { opacity: 0.35 + index * 0.15 }]}
+              />
+            ))}
+          </View>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Date Detail Bottom Sheet Modal */}
@@ -733,42 +849,74 @@ export default function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFF7FA',
+  },
+  contentContainer: {
+    paddingTop: 16,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    gap: 24,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFF7FA',
   },
-  header: {
+  headerBlock: {
+    gap: 4,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#D16D8A',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  calendarCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 28,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  monthRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
-  navButton: {
-    padding: 8,
+  monthButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 107, 157, 0.12)',
   },
-  monthTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  monthLabel: {
+    fontSize: 18,
+    fontWeight: '700',
     color: Colors.text,
   },
-  scrollView: {
-    flex: 1,
-  },
-  dayLabels: {
+  dayLabelsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    justifyContent: 'space-between',
+    marginTop: 24,
+    marginBottom: 12,
   },
   dayLabel: {
-    flex: 1,
+    width: `${100 / 7}%`,
     textAlign: 'center',
     fontSize: 12,
     fontWeight: '600',
@@ -777,7 +925,6 @@ const styles = StyleSheet.create({
   calendarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 10,
   },
   dayCell: {
     width: `${100 / 7}%`,
@@ -786,9 +933,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
-    position: 'relative',
-    borderRadius: 10,
-    marginVertical: 3,
+    borderRadius: 14,
+    marginBottom: 12,
   },
   todayCell: {
     borderColor: Colors.primary,
@@ -799,34 +945,72 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontWeight: '500',
   },
+  dayTextOnPhase: {
+    color: Colors.white,
+    fontWeight: '700',
+  },
   todayText: {
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: Colors.primary,
   },
-  coloredText: {
-    color: Colors.text,
-    fontWeight: '600',
-  },
-  legend: {
+  legendRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    padding: 20,
-    gap: 20,
+    justifyContent: 'space-between',
+    alignItems: 'center',
     flexWrap: 'wrap',
+    marginTop: 16,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginRight: 16,
+    marginBottom: 8,
   },
-  legendColor: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+  legendDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
   },
   legendText: {
     fontSize: 12,
     color: Colors.textSecondary,
+  },
+  logPromptCard: {
+    backgroundColor: Colors.primary,
+    borderRadius: 28,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+    gap: 12,
+  },
+  logPromptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  logPromptTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  logPromptSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  moodDotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  moodDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   modalOverlay: {
     flex: 1,
@@ -1017,9 +1201,5 @@ const styles = StyleSheet.create({
   confirmButtonText: {
     color: Colors.white,
     fontWeight: '600',
-  },
-  dayTextOnPhase: {
-    color: Colors.white,
-    fontWeight: '700',
   },
 });

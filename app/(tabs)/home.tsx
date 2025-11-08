@@ -10,6 +10,7 @@ import {
   Alert,
   Image,
   DeviceEventEmitter,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -59,6 +60,7 @@ export default function HomeScreen() {
   const { isSignedIn, getToken } = useAuth();
   const { phaseColors } = usePhase();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [periods, setPeriods] = useState<Period[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [todaySymptoms, setTodaySymptoms] = useState<Symptom[]>([]);
@@ -224,7 +226,7 @@ export default function HomeScreen() {
 
     loadingRef.current = true;
 
-    let showSpinner = true;
+    let showSpinner = !refreshing;
 
     try {
       const viewModeRecord = getCurrentViewModeRecord();
@@ -323,7 +325,14 @@ export default function HomeScreen() {
       setLoading(false);
       loadingRef.current = false;
     }
-  }, []); // Empty deps - use refs instead
+  }, [refreshing]); // Empty deps - use refs instead
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    loadingRef.current = false;
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
   useEffect(() => {
     // Only load when user or sign-in status changes
@@ -521,7 +530,18 @@ export default function HomeScreen() {
       style={styles.gradientContainer}
     >
       <SafeAreaView style={styles.container}>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={Colors.primary}
+              colors={[Colors.primary]}
+            />
+          }
+        >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.greeting}>Welcome, {userName}! 👋</Text>
