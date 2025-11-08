@@ -472,6 +472,7 @@ export interface RegisterPushTokenPayload {
   deviceType: string;
   mode: ViewMode;
   viewedUserId?: string | null;
+  timezoneOffsetMinutes?: number;
 }
 
 export const registerPushToken = async (payload: RegisterPushTokenPayload) => {
@@ -481,9 +482,20 @@ export const registerPushToken = async (payload: RegisterPushTokenPayload) => {
       deviceType: payload.deviceType,
       mode: payload.mode,
       viewedUserId: payload.viewedUserId ?? null,
+      timezoneOffsetMinutes: payload.timezoneOffsetMinutes ?? null,
     });
   } catch (error) {
     console.warn('[API] Failed to register push token', error);
+  }
+};
+
+export const unregisterPushToken = async (expoPushToken: string) => {
+  try {
+    await api.delete('/api/notifications/register-token', {
+      data: { expoPushToken },
+    });
+  } catch (error) {
+    console.warn('[API] Failed to unregister push token', error);
   }
 };
 

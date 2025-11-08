@@ -653,13 +653,13 @@ export default function ViewerInsightsScreen() {
           <View style={styles.phaseCardsContainer}>
             {predictions.fertileWindowStart && predictions.fertileWindowEnd && (
               <View style={[styles.phaseCard, styles.fertilityCard]}>
+                <Text style={styles.phaseCardLabel}>Fertility Window</Text>
                 <Text style={styles.phaseCardDateText}>
                   {new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
                   })}
                 </Text>
-                <Text style={styles.phaseCardLabel}>Fertility Window</Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
                     source={require('../../assets/images/images/heart_icon.png')}
@@ -672,13 +672,13 @@ export default function ViewerInsightsScreen() {
 
             {predictions.ovulationDate && (
               <View style={[styles.phaseCard, styles.ovulationCard]}>
+                <Text style={styles.phaseCardLabel}>Ovulation</Text>
                 <Text style={styles.phaseCardDateText}>
                   {new Date(predictions.ovulationDate).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
                   })}
                 </Text>
-                <Text style={styles.phaseCardLabel}>Ovulation</Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
                     source={require('../../assets/images/images/flower_icon.png')}
@@ -691,6 +691,9 @@ export default function ViewerInsightsScreen() {
 
             {(predictions.nextPeriodDate || isOnPeriod) && (
               <View style={[styles.phaseCard, styles.periodCard]}>
+                <Text style={styles.phaseCardLabel}>
+                  {isOnPeriod ? 'On Period' : 'Next Period'}
+                </Text>
                 <Text style={styles.phaseCardDateText}>
                   {isOnPeriod && currentPeriodInfo
                     ? `Day ${currentPeriodInfo.dayNumber}`
@@ -700,9 +703,6 @@ export default function ViewerInsightsScreen() {
                         day: 'numeric',
                       })
                     : '—'}
-                </Text>
-                <Text style={styles.phaseCardLabel}>
-                  {isOnPeriod ? 'On Period' : 'Next Period'}
                 </Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
@@ -917,24 +917,25 @@ const styles = StyleSheet.create({
   phaseCardsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     marginBottom: 24,
-    gap: 10,
+    gap: 8,
   },
   phaseCard: {
     flex: 1,
-    borderRadius: 22,
+    minWidth: 130,
+    height: 128,
+    borderRadius: 24,
     paddingVertical: 14,
-    paddingHorizontal: 12,
-    alignItems: 'center',
+    paddingHorizontal: 18,
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     backgroundColor: Colors.white,
     shadowColor: '#F2A0C3',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 3,
-    aspectRatio: 0.95,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   periodCard: {
     backgroundColor: '#FFE6ED',
@@ -952,26 +953,31 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5FF',
   },
   phaseCardDateText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E2432',
-    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4B5563',
+    textAlign: 'left',
   },
   phaseCardLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#273041',
-    marginTop: 6,
-    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E2432',
+    textAlign: 'left',
   },
   phaseCardIcon: {
-    marginTop: 12,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    alignSelf: 'flex-end',
+    marginTop: 8,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#00000012',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
   },
   phaseCardIconImage: {
     width: 28,

@@ -11,6 +11,7 @@ import {
   Image,
   DeviceEventEmitter,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -545,7 +546,10 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.greeting}>Welcome, {userName}! 👋</Text>
-          <Text style={styles.subtitle}>Track your cycle with ease</Text>
+          <View style={styles.subtitleRow}>
+            <Text style={styles.subtitle}>Track your cycle with </Text>
+            <Text style={styles.subtitleScript}>Peri Peri</Text>
+          </View>
         </View>
 
         {/* Center Circle */}
@@ -755,13 +759,13 @@ export default function HomeScreen() {
           <View style={styles.phaseCardsContainer}>
             {predictions.fertileWindowStart && predictions.fertileWindowEnd && (
               <View style={[styles.phaseCard, styles.fertilityCard]}>
+                <Text style={styles.phaseCardLabel}>Fertility Window</Text>
                 <Text style={styles.phaseCardDateText}>
                   {new Date(predictions.fertileWindowStart).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
                   })}
                 </Text>
-                <Text style={styles.phaseCardLabel}>Fertility Window</Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
                     source={require('../../assets/images/images/heart_icon.png')}
@@ -774,13 +778,13 @@ export default function HomeScreen() {
 
             {predictions.ovulationDate && (
               <View style={[styles.phaseCard, styles.ovulationCard]}>
+                <Text style={styles.phaseCardLabel}>Ovulation</Text>
                 <Text style={styles.phaseCardDateText}>
                   {new Date(predictions.ovulationDate).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
                   })}
                 </Text>
-                <Text style={styles.phaseCardLabel}>Ovulation</Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
                     source={require('../../assets/images/images/flower_icon.png')}
@@ -793,6 +797,7 @@ export default function HomeScreen() {
 
             {(predictions.nextPeriodDate || isOnPeriod) && (
               <View style={[styles.phaseCard, styles.periodCard]}>
+                <Text style={styles.phaseCardLabel}>{isOnPeriod ? 'On Your Period' : 'Next Period'}</Text>
                 <Text style={styles.phaseCardDateText}>
                   {isOnPeriod && currentPeriodInfo
                     ? `Day ${currentPeriodInfo.dayNumber}`
@@ -802,9 +807,6 @@ export default function HomeScreen() {
                         day: 'numeric',
                       })
                     : '—'}
-                </Text>
-                <Text style={styles.phaseCardLabel}>
-                  {isOnPeriod ? 'On Your Period' : 'Next Period'}
                 </Text>
                 <View style={styles.phaseCardIcon}>
                   <Image
@@ -1000,6 +1002,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
   },
+  subtitleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    marginTop: 2,
+  },
+  subtitleScript: {
+    fontSize: 18,
+    color: Colors.textSecondary,
+    fontFamily: Platform.select({
+      ios: 'Snell Roundhand',
+      android: 'DancingScript-Regular',
+      default: 'cursive',
+    }),
+  },
   circleContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1053,24 +1070,25 @@ const styles = StyleSheet.create({
   phaseCardsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginBottom: 24,
-    gap: 10,
+    paddingHorizontal: 14,
+    marginBottom: 20,
+    gap: 8,
   },
   phaseCard: {
     flex: 1,
-    borderRadius: 22,
+    minWidth: 130,
+    height: 128,
+    borderRadius: 24,
     paddingVertical: 14,
-    paddingHorizontal: 12,
-    alignItems: 'center',
+    paddingHorizontal: 18,
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     backgroundColor: Colors.white,
     shadowColor: '#F2A0C3',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 3,
-    aspectRatio: 0.95,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   periodCard: {
     backgroundColor: '#FFE6ED',
@@ -1088,26 +1106,31 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5FF',
   },
   phaseCardDateText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E2432',
-    textAlign: 'center',
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#4B5563',
+    textAlign: 'left',
   },
   phaseCardLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#273041',
-    marginTop: 6,
-    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E2432',
+    textAlign: 'left',
   },
   phaseCardIcon: {
-    marginTop: 12,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    alignSelf: 'flex-end',
+    marginTop: 6,
+    width: 44,
+    height: 44,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#00000012',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
   },
   phaseCardIconImage: {
     width: 28,
