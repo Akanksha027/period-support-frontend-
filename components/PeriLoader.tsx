@@ -14,7 +14,7 @@ type PeriLoaderProps = {
 const SIZE_MAP: Record<LoaderSize, number> = {
   small: 36,
   medium: 64,
-  large: 200,
+  large: 320,
 };
 
 export function PeriLoader({ size = 'medium', containerStyle }: PeriLoaderProps) {

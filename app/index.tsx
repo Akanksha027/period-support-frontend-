@@ -231,11 +231,9 @@ export default function Index() {
           return;
         }
 
-        console.error('[Index] Error checking user type:', error);
-        Alert.alert(
-          'Let’s confirm your login type',
-          'Please choose whether you are logging in for yourself or someone else.'
-        );
+        if (__DEV__) {
+          console.error('[Index] Error checking user type:', error);
+        }
         if (primaryEmail) {
           await setViewMode(null, { email: primaryEmail, forgetPersisted: true });
         } else {

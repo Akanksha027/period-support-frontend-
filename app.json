@@ -7,6 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
+    "scheme": "periperi",
     "splash": {
       "image": "./assets/logo.png",
       "resizeMode": "contain",
@@ -21,6 +22,21 @@
     },
     "android": {
       "package": "com.akanksha.periodsupport",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "scheme": "periperi",
+              "host": "*"
+            }
+          ]
+        }
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#FFFFFF"

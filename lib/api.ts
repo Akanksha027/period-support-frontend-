@@ -243,21 +243,25 @@ api.interceptors.request.use(
       delete config.headers['X-View-Mode'];
     }
 
-    // Log request for debugging
-    console.log('[API Request]', {
-      method: config.method?.toUpperCase(),
-      url: config.url,
-      baseURL: config.baseURL,
-      fullURL: `${config.baseURL}${config.url}`,
-      hasAuth: !!config.headers?.Authorization,
-      hasBody: !!config.data,
-      bodyKeys: config.data ? Object.keys(config.data) : [],
-      queryParams: config.params,
-    });
+    // Log request only during development
+    if (__DEV__) {
+      console.log('[API Request]', {
+        method: config.method?.toUpperCase(),
+        url: config.url,
+        baseURL: config.baseURL,
+        fullURL: `${config.baseURL}${config.url}`,
+        hasAuth: !!config.headers?.Authorization,
+        hasBody: !!config.data,
+        bodyKeys: config.data ? Object.keys(config.data) : [],
+        queryParams: config.params,
+      });
+    }
     return config;
   },
   (error) => {
-    console.error('[API Request Error]', error);
+    if (__DEV__) {
+      console.error('[API Request Error]', error);
+    }
     return Promise.reject(error);
   }
 );
@@ -301,21 +305,25 @@ const buildFriendlyMessage = (error: any): string => {
 
 api.interceptors.response.use(
   (response) => {
-    console.log('[API Response]', {
-      status: response.status,
-      url: response.config.url,
-      data: response.data,
-    });
+    if (__DEV__) {
+      console.log('[API Response]', {
+        status: response.status,
+        url: response.config.url,
+        data: response.data,
+      });
+    }
     return response;
   },
   (error) => {
-    console.error('[API Response Error]', {
-      status: error?.response?.status,
-      statusText: error?.response?.statusText,
-      url: error?.config?.url,
-      data: error?.response?.data,
-      message: error?.message,
-    });
+    if (__DEV__) {
+      console.error('[API Response Error]', {
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        url: error?.config?.url,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+    }
 
     const friendlyMessage = buildFriendlyMessage(error);
     const enhancedError: any = new Error(friendlyMessage);

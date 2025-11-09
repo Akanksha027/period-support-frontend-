@@ -554,9 +554,16 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <PeriLoader size="large" />
-      </View>
+      <LinearGradient
+        colors={phaseGradientColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.gradientContainer}
+      >
+        <SafeAreaView style={styles.loaderSafeArea}>
+          <PeriLoader size="large" />
+        </SafeAreaView>
+      </LinearGradient>
     );
   }
 
@@ -1053,6 +1060,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: Colors.background,
+  },
+  loaderSafeArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
   },
   scrollView: {
     flex: 1,
