@@ -1,5 +1,16 @@
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
 import { useSignIn, useOAuth } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { Link } from 'expo-router';
@@ -7,6 +18,44 @@ import * as AuthSession from 'expo-auth-session';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import PeriLoader from '../../components/PeriLoader';
+
+const AuthScreenWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <View style={styles.mainContainer}>
+    <LinearGradient
+      colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
+      style={styles.topGradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0.5 }}
+    >
+      <View style={styles.starsContainer}>
+        <Text style={[styles.star, styles.star1]}>✦</Text>
+        <Text style={[styles.star, styles.star2]}>✦</Text>
+        <Text style={[styles.star, styles.star3]}>✦</Text>
+      </View>
+      <View style={styles.curvedOverlay}>
+        <View style={styles.curveShape} />
+      </View>
+    </LinearGradient>
+
+    <View style={styles.bottomWhite} />
+
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.keyboardAvoider}
+      keyboardVerticalOffset={Platform.select({ ios: 0, android: 20 })}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <View style={styles.card}>{children}</View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </View>
+);
 
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn();
@@ -96,139 +145,79 @@ export default function SignInScreen() {
   };
 
   return (
-    <View style={styles.mainContainer}>
-      {/* Top pink gradient section with stars */}
-      <LinearGradient
-        colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
-        style={styles.topGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0.5 }}
-      >
-        {/* Decorative stars - white color */}
-        <View style={styles.starsContainer}>
-          <Text style={[styles.star, styles.star1]}>✦</Text>
-          <Text style={[styles.star, styles.star2]}>✦</Text>
-          <Text style={[styles.star, styles.star3]}>✦</Text>
+    <AuthScreenWrapper>
+      <View style={styles.logoContainer}>
+        <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+      </View>
+
+      <Text style={styles.title}>Sign in</Text>
+      <Text style={styles.subtitle}>Log in to access your account</Text>
+
+      <View style={styles.form}>
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Email</Text>
+          <TextInput
+            style={styles.input}
+            autoCapitalize="none"
+            value={emailAddress}
+            placeholder="example@gmail.com"
+            placeholderTextColor="#999"
+            onChangeText={(email) => setEmailAddress(email)}
+            keyboardType="email-address"
+          />
         </View>
 
-        {/* Curved white overlay - curves downward */}
-        <View style={styles.curvedOverlay}>
-          <View style={styles.curveShape} />
-        </View>
-      </LinearGradient>
-
-      {/* Bottom white section */}
-      <View style={styles.bottomWhite} />
-
-      {/* Content */}
-      <View style={styles.content}>
-        <View style={styles.card}>
-          {/* Logo */}
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('../../assets/logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>password</Text>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              value={password}
+              placeholder="••••••••"
+              placeholderTextColor="#999"
+              secureTextEntry={!showPassword}
+              onChangeText={(password) => setPassword(password)}
             />
-          </View>
-
-          {/* Title */}
-          <Text style={styles.title}>Sign in</Text>
-          <Text style={styles.subtitle}>Log in to access your account</Text>
-
-          {/* Form */}
-          <View style={styles.form}>
-            {/* Email Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email</Text>
-              <TextInput
-                style={styles.input}
-                autoCapitalize="none"
-                value={emailAddress}
-                placeholder="example@gmail.com"
-                placeholderTextColor="#999"
-                onChangeText={(email) => setEmailAddress(email)}
-                keyboardType="email-address"
-              />
-            </View>
-
-            {/* Password Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>password</Text>
-              <View style={styles.passwordContainer}>
-                <TextInput
-                  style={styles.passwordInput}
-                  value={password}
-                  placeholder="••••••••"
-                  placeholderTextColor="#999"
-                  secureTextEntry={!showPassword}
-                  onChangeText={(password) => setPassword(password)}
-                />
-                <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  <Ionicons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={20}
-                    color="#999"
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Sign In Button */}
-            <TouchableOpacity
-              style={[styles.signInButton, loading && styles.buttonDisabled]}
-              onPress={onSignInPress}
-              disabled={loading}
-            >
-              {loading ? (
-                <PeriLoader size={32} />
-              ) : (
-                <Text style={styles.signInButtonText}>Sign in</Text>
-              )}
+            <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#999" />
             </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or login with</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Social Buttons Row */}
-            <View style={styles.socialButtonsRow}>
-              <TouchableOpacity
-                style={styles.socialButton}
-                onPress={handleGoogleSignIn}
-                disabled={loading}
-              >
-                <Ionicons name="logo-google" size={20} color="#DB4437" />
-                <Text style={styles.socialButtonText}>Google</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.socialButton}
-                onPress={handleAppleSignIn}
-                disabled={loading}
-              >
-                <Ionicons name="logo-apple" size={20} color="#000" />
-                <Text style={styles.socialButtonText}>Apple</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Sign up link */}
-            <View style={styles.linkContainer}>
-              <Text style={styles.linkText}>Don't have an account? </Text>
-              <Link href="/(auth)/sign-up">
-                <Text style={styles.link}>Sign up</Text>
-              </Link>
-            </View>
           </View>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.signInButton, loading && styles.buttonDisabled]}
+          onPress={onSignInPress}
+          disabled={loading}
+        >
+          {loading ? <PeriLoader size={32} /> : <Text style={styles.signInButtonText}>Sign in</Text>}
+        </TouchableOpacity>
+
+        <View style={styles.dividerContainer}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or login with</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <View style={styles.socialButtonsRow}>
+          <TouchableOpacity style={styles.socialButton} onPress={handleGoogleSignIn} disabled={loading}>
+            <Ionicons name="logo-google" size={20} color="#DB4437" />
+            <Text style={styles.socialButtonText}>Google</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.socialButton} onPress={handleAppleSignIn} disabled={loading}>
+            <Ionicons name="logo-apple" size={20} color="#000" />
+            <Text style={styles.socialButtonText}>Apple</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.linkContainer}>
+          <Text style={styles.linkText}>Don't have an account? </Text>
+          <Link href="/(auth)/sign-up">
+            <Text style={styles.link}>Sign up</Text>
+          </Link>
         </View>
       </View>
-    </View>
+    </AuthScreenWrapper>
   );
 }
 
@@ -300,6 +289,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
     zIndex: 10,
+  },
+  keyboardAvoider: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   card: {
     width: '100%',

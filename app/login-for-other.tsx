@@ -1,12 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, Platform, Modal } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Image,
+  Platform,
+  KeyboardAvoidingView,
+  Animated,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { loginForOtherAPI, setClerkTokenGetter, setViewMode, loadStoredViewModeRecord, peekStoredViewModeRecord } from '@/lib/api';
 import PeriLoader from '../components/PeriLoader';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/Colors';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginForOtherScreen() {
   const router = useRouter();
@@ -17,113 +28,53 @@ export default function LoginForOtherScreen() {
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
   const [otp, setOtp] = useState('');
   const [otpEmail, setOtpEmail] = useState('');
-  const [tempToken, setTempToken] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<{
-    visible: boolean;
-    title: string;
-    message: string;
-    variant?: 'info' | 'success' | 'error';
-    primaryLabel?: string;
-    onPrimary?: () => void;
-    secondaryLabel?: string;
-    onSecondary?: () => void;
-  }>({
-    visible: false,
-    title: '',
+  const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'error'; visible: boolean }>({
     message: '',
-    variant: 'info',
+    type: 'info',
+    visible: false,
   });
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<NodeJS.Timeout | null>(null);
 
   const viewerEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? null;
-  const hideDialog = () => setDialog((prev) => ({ ...prev, visible: false }));
-  const showDialog = ({
-    title,
-    message,
-    variant = 'info',
-    primaryLabel,
-    onPrimary,
-    secondaryLabel,
-    onSecondary,
-  }: {
-    title: string;
-    message: string;
-    variant?: 'info' | 'success' | 'error';
-    primaryLabel?: string;
-    onPrimary?: () => void;
-    secondaryLabel?: string;
-    onSecondary?: () => void;
-  }) =>
-    setDialog({
-      visible: true,
-      title,
-      message,
-      variant,
-      primaryLabel,
-      onPrimary,
-      secondaryLabel,
-      onSecondary,
+
+  const hideToast = useCallback(() => {
+    Animated.timing(toastOpacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setToast((prev) => ({ ...prev, visible: false }));
     });
+  }, [toastOpacity]);
 
-  const renderDialog = () => {
-    if (!dialog.visible) return null;
+  const showToast = useCallback(
+    (message: string, type: 'info' | 'success' | 'error' = 'info', duration = 3500) => {
+      if (!message) return;
+      if (toastTimer.current) {
+        clearTimeout(toastTimer.current);
+      }
+      setToast({ message, type, visible: true });
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
 
-    const accentColor =
-      dialog.variant === 'success'
-        ? '#36C88A'
-        : dialog.variant === 'error'
-        ? '#FF6B9D'
-        : Colors.primary;
+      toastTimer.current = setTimeout(() => {
+        hideToast();
+      }, duration);
+    },
+    [hideToast, toastOpacity]
+  );
 
-    return (
-      <Modal transparent animationType="fade" visible={dialog.visible} onRequestClose={hideDialog}>
-        <View style={styles.dialogBackdrop}>
-          <View style={styles.dialogCard}>
-            <View style={[styles.dialogIconWrapper, { backgroundColor: `${accentColor}1A` }]}>
-              <Ionicons
-                name={
-                  dialog.variant === 'success'
-                    ? 'checkmark-circle'
-                    : dialog.variant === 'error'
-                    ? 'alert-circle'
-                    : 'information-circle'
-                }
-                size={32}
-                color={accentColor}
-              />
-            </View>
-            <Text style={styles.dialogTitle}>{dialog.title}</Text>
-            <Text style={styles.dialogMessage}>{dialog.message}</Text>
-            <View style={styles.dialogActions}>
-              {dialog.secondaryLabel ? (
-                <TouchableOpacity
-                  style={[styles.dialogButton, styles.dialogSecondaryButton]}
-                  onPress={() => {
-                    hideDialog();
-                    dialog.onSecondary?.();
-                  }}
-                >
-                  <Text style={[styles.dialogButtonText, styles.dialogSecondaryButtonText]}>
-                    {dialog.secondaryLabel}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                style={[styles.dialogButton, { backgroundColor: accentColor }]}
-                onPress={() => {
-                  hideDialog();
-                  dialog.onPrimary?.();
-                }}
-              >
-                <Text style={[styles.dialogButtonText, styles.dialogPrimaryButtonText]}>
-                  {dialog.primaryLabel || 'OK'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) {
+        clearTimeout(toastTimer.current);
+      }
+    };
+  }, []);
 
   // Set up token getter for API calls
   useEffect(() => {
@@ -135,15 +86,10 @@ export default function LoginForOtherScreen() {
   // Check if user is logged in
   useEffect(() => {
     if (!isSignedIn) {
-      showDialog({
-        title: 'Authentication Required',
-        message: "You must be logged in to view someone else's account. Please log in first.",
-        variant: 'info',
-        primaryLabel: 'Go to login',
-        onPrimary: () => router.replace('/(auth)/sign-in'),
-      });
+      showToast("Please sign in before accessing someone else's account.", 'error');
+      router.replace('/(auth)/sign-in');
     }
-  }, [isSignedIn]);
+  }, [isSignedIn, router, showToast]);
 
   useEffect(() => {
     const redirectIfStored = async () => {
@@ -159,11 +105,7 @@ export default function LoginForOtherScreen() {
 
   const handleVerifyCredentials = async () => {
     if (!email) {
-      showDialog({
-        title: 'Missing Email',
-        message: 'Please enter an email address before continuing.',
-        variant: 'error',
-      });
+      showToast('Enter an email address to continue.', 'error');
       return;
     }
 
@@ -172,12 +114,10 @@ export default function LoginForOtherScreen() {
       if (viewerEmail) {
         const storedViewerMode = await peekStoredViewModeRecord(viewerEmail);
         if (storedViewerMode && storedViewerMode.mode !== 'OTHER') {
-          showDialog({
-            title: 'Access Restricted',
-            message:
-              "This account is configured for personal tracking. Please sign in with a different email to view someone else's data.",
-            variant: 'error',
-          });
+          showToast(
+            'This account is linked to personal tracking. Please sign in with another email to manage someone else.',
+            'error'
+          );
           setLoading(false);
           return;
         }
@@ -192,11 +132,7 @@ export default function LoginForOtherScreen() {
       const verifyResponse = await loginForOtherAPI.verifyCredentials(email);
 
       if (!verifyResponse.success) {
-        showDialog({
-          title: 'Verification Failed',
-          message: verifyResponse.error || 'No account found with this email address.',
-          variant: 'error',
-        });
+        showToast(verifyResponse.error || 'We could not find an account with that email.', 'error');
         return;
       }
 
@@ -204,11 +140,7 @@ export default function LoginForOtherScreen() {
       await handleSendOTP(email);
     } catch (error: any) {
       console.error('Verify credentials error:', error);
-      showDialog({
-        title: 'Verification Failed',
-        message: error?.response?.data?.error || 'Failed to verify email. Please try again.',
-        variant: 'error',
-      });
+      showToast(error?.response?.data?.error || 'We could not verify that email. Try again in a moment.', 'error');
     } finally {
       setLoading(false);
     }
@@ -221,47 +153,28 @@ export default function LoginForOtherScreen() {
       if (response.success) {
         setOtpEmail(emailAddress);
         setStep('otp');
-        showDialog({
-          title: 'OTP Sent',
-          message:
-            'Please check your email for the verification code. (For development: check the backend console too.)',
-          variant: 'success',
-        });
+        showToast('We sent a verification code to the email address you provided.', 'success');
       } else {
-        showDialog({
-          title: 'OTP Failed',
-          message: response.error || 'Failed to send OTP.',
-          variant: 'error',
-        });
+        showToast(response.error || 'We could not send the verification code. Please try again.', 'error');
       }
     } catch (error: any) {
       console.error('Send OTP error:', error);
-      showDialog({
-        title: 'OTP Failed',
-        message: error?.friendlyMessage || error?.response?.data?.error || 'Failed to send OTP. Please try again.',
-        variant: 'error',
-      });
+      showToast(
+        error?.friendlyMessage || error?.response?.data?.error || 'We could not send the verification code. Please try again.',
+        'error'
+      );
     }
   };
 
   const handleVerifyOTP = async () => {
     if (!otp || otp.length !== 6) {
-      showDialog({
-        title: 'Invalid OTP',
-        message: 'Please enter the 6-digit verification code sent to the email.',
-        variant: 'error',
-      });
+      showToast('Enter the 6-digit verification code from the email.', 'error');
       return;
     }
 
     if (!isSignedIn || !getToken) {
-      showDialog({
-        title: 'Authentication Required',
-        message: 'You must be logged in to complete this action. Please log in first.',
-        variant: 'error',
-        primaryLabel: 'Go to login',
-        onPrimary: () => router.replace('/(auth)/sign-in'),
-      });
+      showToast('Please sign in again to continue.', 'error');
+      router.replace('/(auth)/sign-in');
       return;
     }
 
@@ -269,46 +182,28 @@ export default function LoginForOtherScreen() {
     try {
       const token = await getToken();
       if (!token) {
-        showDialog({
-          title: 'Authentication Error',
-          message: 'Authentication token not available. Please log in again.',
-          variant: 'error',
-        });
+        showToast('We could not confirm your session. Please sign in again.', 'error');
+        router.replace('/(auth)/sign-in');
         setLoading(false);
         return;
       }
 
-      console.log('[Login For Other] User is logged in with Clerk ID:', userId);
-
       const verifyResponse = await loginForOtherAPI.verifyOTP(otpEmail, otp);
 
       if (!verifyResponse.success) {
-        showDialog({
-          title: 'Invalid OTP',
-          message:
-            verifyResponse.error ||
-            'The verification code entered is incorrect. Please try again.',
-          variant: 'error',
-        });
+        showToast(
+          verifyResponse.error || 'The verification code is incorrect. Please try again.',
+          'error'
+        );
         return;
       }
 
       if (!verifyResponse.tempToken) {
-        showDialog({
-          title: 'Verification Error',
-          message: 'Verification token not received. Please try again.',
-          variant: 'error',
-        });
+        showToast('We could not verify the code. Please request a new one.', 'error');
         return;
       }
 
       const viewerIdentifier = `device_${Date.now()}`;
-
-      console.log('[Login For Other] Completing login with token:', {
-        hasToken: !!token,
-        userId,
-        viewedEmail: otpEmail,
-      });
 
       const completeResponse = await loginForOtherAPI.completeLogin(
         otpEmail,
@@ -317,8 +212,6 @@ export default function LoginForOtherScreen() {
       );
 
       if (completeResponse.success) {
-        console.log('[Login For Other] Login completed:', completeResponse.viewer);
-
         if (viewerEmail) {
           await setViewMode('OTHER', {
             email: viewerEmail,
@@ -333,221 +226,184 @@ export default function LoginForOtherScreen() {
           });
         }
 
+        showToast('Access granted. Loading insights...', 'success');
         router.replace('/(viewer-tabs)/insights');
       } else {
-        showDialog({
-          title: 'Login Failed',
-          message: completeResponse.error || 'Failed to complete login. Please try again.',
-          variant: 'error',
-        });
+        showToast(completeResponse.error || 'We could not complete the login. Please try again.', 'error');
       }
     } catch (error: any) {
       console.error('[Login For Other] Verify OTP error:', error);
-        showDialog({
-          title: 'Verification Failed',
-          message:
-            error?.friendlyMessage ||
-            error?.response?.data?.error ||
-            'Failed to verify OTP. Please try again.',
-          variant: 'error',
-        });
+      showToast(
+        error?.friendlyMessage ||
+          error?.response?.data?.error ||
+          'We could not verify the code. Please try again.',
+        'error'
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  if (step === 'otp') {
-    return (
+  const cardContent =
+    step === 'otp' ? (
+      <>
+        <View style={styles.logoContainer}>
+          <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+        </View>
+
+        <View style={styles.iconContainer}>
+          <Ionicons name="shield-checkmark" size={48} color="#FF6B9D" />
+        </View>
+
+        <Text style={styles.title}>Enter Verification Code</Text>
+        <Text style={styles.subtitle}>We sent a 6-digit verification code to {otpEmail}</Text>
+        <Text style={styles.note}>
+          If you don't see the email within a minute, check your spam folder or go back to confirm the address.
+        </Text>
+
+        <View style={styles.form}>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Verification Code</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="key-outline" size={20} color="#FF6B9D" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={otp}
+                placeholder="Enter 6-digit code"
+                placeholderTextColor="#999"
+                onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, '').slice(0, 6))}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, (loading || otp.length !== 6) && styles.buttonDisabled]}
+            onPress={handleVerifyOTP}
+            disabled={loading || otp.length !== 6}
+          >
+            {loading ? <PeriLoader size={48} /> : <Text style={styles.buttonText}>Verify Code</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={() => {
+              setStep('credentials');
+              setOtp('');
+            }}
+          >
+            <Text style={styles.linkText}>Back to email</Text>
+          </TouchableOpacity>
+        </View>
+      </>
+    ) : (
+      <>
+        <View style={styles.logoContainer}>
+          <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+        </View>
+
+        <View style={styles.iconContainer}>
+          <Ionicons name="people" size={48} color="#FF6B9D" />
+        </View>
+
+        <Text style={styles.title}>Login for Someone Else</Text>
+        <Text style={styles.subtitle}>
+          Enter the email address of the person you support. We'll send them a one-time code to confirm access.
+        </Text>
+
+        <View style={styles.form}>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Email Address</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="mail-outline" size={20} color="#FF6B9D" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                autoCapitalize="none"
+                value={email}
+                placeholder="Enter their email address"
+                placeholderTextColor="#999"
+                onChangeText={(text) => setEmail(text)}
+                keyboardType="email-address"
+                editable={!loading}
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, (loading || !email) && styles.buttonDisabled]}
+            onPress={handleVerifyCredentials}
+            disabled={loading || !email}
+          >
+            {loading ? <PeriLoader size={48} /> : <Text style={styles.buttonText}>Continue</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.linkButton} onPress={() => router.back()}>
+            <Text style={styles.linkText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </>
+    );
+
+  const toastBackgroundColor =
+    toast.type === 'success' ? '#36C88A' : toast.type === 'error' ? '#FF6B9D' : '#3A3A3A';
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
       <View style={styles.mainContainer}>
-        {renderDialog()}
-        {/* Top pink gradient section with stars */}
         <LinearGradient
           colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
           style={styles.topGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0.5 }}
         >
-          {/* Decorative stars */}
           <View style={styles.starsContainer}>
             <Text style={[styles.star, styles.star1]}>✦</Text>
             <Text style={[styles.star, styles.star2]}>✦</Text>
             <Text style={[styles.star, styles.star3]}>✦</Text>
           </View>
 
-          {/* Curved white overlay */}
           <View style={styles.curvedOverlay}>
             <View style={styles.curveShape} />
           </View>
         </LinearGradient>
 
-        {/* Bottom white section */}
         <View style={styles.bottomWhite} />
-
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          <View style={styles.content}>
-            <View style={styles.card}>
-              {/* Logo */}
-              <View style={styles.logoContainer}>
-                <Image
-                  source={require('../assets/logo.png')}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
-              </View>
-
-              {/* Icon */}
-              <View style={styles.iconContainer}>
-                <Ionicons name="shield-checkmark" size={48} color="#FF6B9D" />
-              </View>
-
-              <Text style={styles.title}>Enter Verification Code</Text>
-              <Text style={styles.subtitle}>
-                We've sent a 6-digit verification code to {otpEmail}
-              </Text>
-              <Text style={styles.note}>
-                Note: Check your backend console for the OTP code (for development) 
-              </Text>
-
-              <View style={styles.form}>
-                <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Verification Code</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="key-outline" size={20} color="#FF6B9D" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      value={otp}
-                      placeholder="Enter 6-digit code"
-                      placeholderTextColor="#999"
-                      onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, '').slice(0, 6))}
-                      keyboardType="number-pad"
-                      maxLength={6}
-                      autoFocus
-                    />
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.button, (loading || otp.length !== 6) && styles.buttonDisabled]}
-                  onPress={handleVerifyOTP}
-                  disabled={loading || otp.length !== 6}
-                >
-                  {loading ? (
-                    <PeriLoader size={32} />
-                  ) : (
-                    <Text style={styles.buttonText}>Verify Code</Text>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.linkButton}
-                  onPress={() => {
-                    setStep('credentials');
-                    setOtp('');
-                  }}
-                >
-                  <Text style={styles.linkText}>Back to email</Text>
-                </TouchableOpacity>
-              </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoider}
+          keyboardVerticalOffset={Platform.select({ ios: 0, android: 20 })}
+        >
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.content}>
+              <View style={styles.card}>{cardContent}</View>
             </View>
-          </View>
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </View>
-    );
-  }
 
-  return (
-    <View style={styles.mainContainer}>
-      {renderDialog()}
-      {/* Top pink gradient section with stars */}
-      <LinearGradient
-        colors={['#FFC1D6', '#FFB3C6', '#FFA6BA']}
-        style={styles.topGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0.5 }}
-      >
-        {/* Decorative stars */}
-        <View style={styles.starsContainer}>
-          <Text style={[styles.star, styles.star1]}>✦</Text>
-          <Text style={[styles.star, styles.star2]}>✦</Text>
-          <Text style={[styles.star, styles.star3]}>✦</Text>
-        </View>
-
-        {/* Curved white overlay */}
-        <View style={styles.curvedOverlay}>
-          <View style={styles.curveShape} />
-        </View>
-      </LinearGradient>
-
-      {/* Bottom white section */}
-      <View style={styles.bottomWhite} />
-
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.content}>
-          <View style={styles.card}>
-            {/* Logo */}
-            <View style={styles.logoContainer}>
-              <Image
-                source={require('../assets/logo.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </View>
-
-            {/* Icon */}
-            <View style={styles.iconContainer}>
-              <Ionicons name="people" size={48} color="#FF6B9D" />
-            </View>
-
-            <Text style={styles.title}>Login for Someone Else</Text>
-            <Text style={styles.subtitle}>
-              Enter the email address of the person you want to track periods for. An OTP will be sent to their email for verification.
-            </Text>
-
-            <View style={styles.form}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Email Address</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="mail-outline" size={20} color="#FF6B9D" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    autoCapitalize="none"
-                    value={email}
-                    placeholder="Enter their email address"
-                    placeholderTextColor="#999"
-                    onChangeText={(text) => setEmail(text)}
-                    keyboardType="email-address"
-                    editable={!loading}
-                  />
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.button, (loading || !email) && styles.buttonDisabled]}
-                onPress={handleVerifyCredentials}
-                disabled={loading || !email}
-              >
-                {loading ? (
-                  <PeriLoader size={32} />
-                ) : (
-                  <Text style={styles.buttonText}>Continue</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.linkButton}
-                onPress={() => router.back()}
-              >
-                <Text style={styles.linkText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+      {toast.visible ? (
+        <Animated.View pointerEvents="none" style={[styles.toastWrapper, { opacity: toastOpacity }]}>
+          <View style={[styles.toast, { backgroundColor: toastBackgroundColor }]}>
+            <Text style={styles.toastText}>{toast.message}</Text>
           </View>
-        </View>
-      </ScrollView>
-    </View>
+        </Animated.View>
+      ) : null}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   mainContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -721,7 +577,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 1,
   },
   buttonText: {
     color: '#fff',
@@ -738,70 +594,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  dialogBackdrop: {
+  keyboardAvoider: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
+  },
+  toastWrapper: {
+    position: 'absolute',
+    bottom: 32,
+    left: 20,
+    right: 20,
     alignItems: 'center',
-    padding: 24,
+    zIndex: 100,
   },
-  dialogCard: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  dialogIconWrapper: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  dialogTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.text,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  dialogMessage: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 20,
-  },
-  dialogActions: {
-    flexDirection: 'row',
-    alignSelf: 'stretch',
-    gap: 12,
-  },
-  dialogButton: {
-    flex: 1,
+  toast: {
+    paddingHorizontal: 18,
     paddingVertical: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  dialogButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  dialogPrimaryButtonText: {
+  toastText: {
     color: '#FFFFFF',
-  },
-  dialogSecondaryButton: {
-    backgroundColor: '#F6F6F8',
-  },
-  dialogSecondaryButtonText: {
-    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

@@ -1,20 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  Switch,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { getSettings, updateSettings, UserSettings, setViewMode } from '../../lib/api';
+import { getSettings, UserSettings, setViewMode } from '../../lib/api';
 import { setClerkTokenGetter } from '../../lib/api';
 import { clearStoredPushToken } from '../../lib/notifications';
 import PeriLoader from '../../components/PeriLoader';
@@ -24,7 +15,6 @@ export default function Profile() {
   const { user } = useUser();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<UserSettings | null>(null);
 
   // Set up token getter
@@ -68,20 +58,6 @@ export default function Profile() {
     }
   }, [user]);
 
-  const handleSaveSettings = useCallback(async () => {
-    if (!settings) return;
-
-    setSaving(true);
-    try {
-      await updateSettings(settings);
-      Alert.alert('Success', 'Settings saved successfully');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to save settings');
-    } finally {
-      setSaving(false);
-    }
-  }, [settings]);
-
   const handleSignOut = useCallback(async () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -121,82 +97,27 @@ export default function Profile() {
         {/* Cycle Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cycle Settings</Text>
+          <Text style={styles.sectionDescription}>
+            Cycle metrics are currently read-only. Reach out to support if something looks off.
+          </Text>
 
           <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Average Cycle Length (days)</Text>
-            <TextInput
-              style={styles.settingInput}
-              value={settings?.averageCycleLength?.toString() || '28'}
-              onChangeText={(text) =>
-                setSettings((prev) =>
-                  prev ? { ...prev, averageCycleLength: parseInt(text) || 28 } : null
-                )
-              }
-              keyboardType="number-pad"
-            />
-          </View>
-
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Average Period Length (days)</Text>
-            <TextInput
-              style={styles.settingInput}
-              value={settings?.averagePeriodLength?.toString() || '5'}
-              onChangeText={(text) =>
-                setSettings((prev) =>
-                  prev ? { ...prev, averagePeriodLength: parseInt(text) || 5 } : null
-                )
-              }
-              keyboardType="number-pad"
-            />
-          </View>
-        </View>
-
-        {/* Reminder Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Reminders</Text>
-
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Enable Reminders</Text>
-            <Switch
-              value={settings?.reminderEnabled ?? true}
-              onValueChange={(value) =>
-                setSettings((prev) =>
-                  prev ? { ...prev, reminderEnabled: value } : null
-                )
-              }
-              trackColor={{ false: Colors.border, true: Colors.secondary }}
-              thumbColor={settings?.reminderEnabled ? Colors.primary : Colors.textSecondary}
-            />
-          </View>
-
-          {settings?.reminderEnabled && (
-            <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>Remind me (days before)</Text>
-              <TextInput
-                style={styles.settingInput}
-                value={settings?.reminderDaysBefore?.toString() || '3'}
-                onChangeText={(text) =>
-                  setSettings((prev) =>
-                    prev ? { ...prev, reminderDaysBefore: parseInt(text) || 3 } : null
-                  )
-                }
-                keyboardType="number-pad"
-              />
+            <Text style={styles.settingLabel}>Average Cycle Length</Text>
+            <View style={styles.settingValue}>
+              <Text style={styles.settingValueText}>
+                {settings?.averageCycleLength ?? 28} days
+              </Text>
             </View>
-          )}
-        </View>
+          </View>
 
-        {/* Save Button */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-            onPress={handleSaveSettings}
-            disabled={saving}
-          >
-            <Text style={styles.saveButtonText}>
-              {saving ? 'Saving...' : 'Save Settings'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Average Period Length</Text>
+            <View style={styles.settingValue}>
+              <Text style={styles.settingValueText}>
+                {settings?.averagePeriodLength ?? 5} days
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* Account Actions */}
@@ -249,6 +170,12 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: 16,
   },
+  sectionDescription: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 20,
+    lineHeight: 18,
+  },
   settingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -260,29 +187,20 @@ const styles = StyleSheet.create({
     color: Colors.text,
     flex: 1,
   },
-  settingInput: {
+  settingValue: {
+    minWidth: 90,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 16,
-    color: Colors.text,
-    width: 100,
-    textAlign: 'right',
+    alignItems: 'flex-end',
   },
-  saveButton: {
-    backgroundColor: Colors.primary,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    color: Colors.white,
+  settingValueText: {
     fontSize: 16,
     fontWeight: '600',
+    color: Colors.text,
   },
   signOutButton: {
     flexDirection: 'row',

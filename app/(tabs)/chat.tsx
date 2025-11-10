@@ -8,13 +8,14 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
-import { chatWithAI, setClerkTokenGetter } from '../../lib/api';
+import { chatWithAI, setClerkTokenGetter, getUserInfo } from '../../lib/api';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import PeriLoader from '../../components/PeriLoader';
 
@@ -67,15 +68,37 @@ export default function ChatScreen() {
   const { getToken } = useAuth();
   const params = useLocalSearchParams<{ initialMessage?: string }>();
   const insets = useSafeAreaInsets();
-  const TAB_BAR_OFFSET = 78;
+  const TAB_BAR_HEIGHT = 78;
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const initialMessageSent = useRef(false);
+  const ensuredUserRef = useRef(false);
 
   const userName = user?.firstName || user?.fullName?.split(' ')[0] || 'there';
+
+  useEffect(() => {
+    const keyboardWillShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+      }
+    );
+    const keyboardWillHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardWillHideListener.remove();
+      keyboardWillShowListener.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (getToken) {
@@ -119,6 +142,19 @@ export default function ChatScreen() {
     setLoading(true);
 
     try {
+      if (!ensuredUserRef.current) {
+        try {
+          await getUserInfo();
+          ensuredUserRef.current = true;
+        } catch (ensureError: any) {
+          console.error('[Chat] Failed to ensure user exists before chatting:', ensureError);
+          if (ensureError?.response?.status === 404) {
+            ensuredUserRef.current = false;
+            throw ensureError;
+          }
+        }
+      }
+
       const messagesArray = updatedMessages.map(msg => ({
         role: msg.role,
         content: msg.content,
@@ -137,10 +173,21 @@ export default function ChatScreen() {
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
       console.error('[Chat] Error details:', error);
+      ensuredUserRef.current = false;
+      let fallbackMessage =
+        error?.response?.data?.error ||
+        error?.friendlyMessage ||
+        'Sorry, I encountered an error. Please try again.';
+
+      if (error?.response?.status === 404) {
+        fallbackMessage =
+          "I couldn't find your tracking data yet. Please finish setting up your profile and log at least one period so I can give personalised guidance.";
+      }
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: error?.response?.data?.error || 'Sorry, I encountered an error. Please try again.',
+        content: fallbackMessage,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -168,55 +215,56 @@ export default function ChatScreen() {
         />
       </View>
 
-      <SafeAreaView style={[styles.safeArea, { paddingBottom: TAB_BAR_OFFSET + insets.bottom }]} edges={['top']}>
+      <SafeAreaView 
+        style={styles.safeArea} 
+        edges={['top']}
+      >
         <KeyboardAvoidingView
           style={styles.keyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={90}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
-          {showQuickActions && messages.length === 0 && (
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.contentContainer}
+            contentContainerStyle={styles.contentWrapper}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.greetingSection}>
               <View style={styles.brainIconContainer}>
-                <Ionicons name="sparkles" size={32} color="#9B8EE8" />
+                <Ionicons name="sparkles" size={28} color="#9B8EE8" />
               </View>
               <Text style={styles.greetingText}>Hey {userName}!</Text>
               <Text style={styles.helpText}>How can I help you?</Text>
             </View>
-          )}
 
-          {showQuickActions && messages.length === 0 ? (
-            <View style={styles.quickActionsContainer}>
-              <Text style={styles.quickActionsTitle}>Things you can do!</Text>
-              <ScrollView
-                style={styles.quickActionsScroll}
-                contentContainerStyle={styles.quickActionsWrapper}
-                showsVerticalScrollIndicator={false}
-              >
-                {quickActions.map((action) => (
-                  <TouchableOpacity
-                    key={action.id}
-                    style={styles.quickActionCard}
-                    onPress={() => handleQuickAction(action)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.quickActionIcon, { backgroundColor: action.iconColor }]}>
-                      <Ionicons name={action.icon as keyof typeof Ionicons.glyphMap} size={24} color="#FFFFFF" />
-                    </View>
-                    <View style={styles.quickActionContent}>
-                      <Text style={styles.quickActionTitle}>{action.title}</Text>
-                      <Text style={styles.quickActionDescription}>{action.description}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          ) : (
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.messagesContainer}
-              contentContainerStyle={[styles.messagesContent, styles.messagesContentBottom]}
-            >
-              <>
+            {showQuickActions && messages.length === 0 && (
+              <View style={styles.quickActionsContainer}>
+                <Text style={styles.quickActionsTitle}>Things you can do!</Text>
+                <View style={styles.quickActionsCards}>
+                  {quickActions.map((action) => (
+                    <TouchableOpacity
+                      key={action.id}
+                      style={styles.quickActionCard}
+                      onPress={() => handleQuickAction(action)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.quickActionIcon, { backgroundColor: action.iconColor }]}>
+                        <Ionicons name={action.icon as keyof typeof Ionicons.glyphMap} size={22} color="#FFFFFF" />
+                      </View>
+                      <View style={styles.quickActionContent}>
+                        <Text style={styles.quickActionTitle}>{action.title}</Text>
+                        <Text style={styles.quickActionDescription}>{action.description}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {!showQuickActions && (
+              <View style={styles.messagesWrapper}>
                 {messages.map((message) => (
                   <View
                     key={message.id}
@@ -237,21 +285,14 @@ export default function ChatScreen() {
                 ))}
                 {loading && (
                   <View style={[styles.messageContainer, styles.assistantMessage, styles.loaderMessage]}>
-                    <PeriLoader size={110} containerStyle={styles.loaderLottieContainer} />
+                    <PeriLoader size={100} containerStyle={styles.loaderLottieContainer} />
                   </View>
                 )}
-              </>
-            </ScrollView>
-          )}
+              </View>
+            )}
+          </ScrollView>
 
-          <View
-            style={[
-              styles.inputContainer,
-              {
-                paddingBottom: Math.max(insets.bottom, 8) + 10,
-              },
-            ]}
-          >
+          <View style={[styles.inputContainer, keyboardVisible && styles.inputContainerKeyboard]}>
             <TextInput
               style={styles.input}
               value={inputText}
@@ -261,11 +302,14 @@ export default function ChatScreen() {
               multiline
               maxLength={500}
               onSubmitEditing={handleSend}
+              returnKeyType="send"
+              blurOnSubmit={false}
             />
             <TouchableOpacity
               style={[styles.sendButton, (!inputText.trim() || loading) && styles.sendButtonDisabled]}
               onPress={handleSend}
               disabled={!inputText.trim() || loading}
+              activeOpacity={0.7}
             >
               <Ionicons
                 name="send"
@@ -284,7 +328,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.white,
-    position: 'relative',
   },
   gradientBarContainer: {
     position: 'absolute',
@@ -304,109 +347,104 @@ const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
   },
-  greetingSection: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 10,
-  },
-  brainIconContainer: {
-    marginBottom: 12,
-    marginLeft: -4,
-  },
-  greetingText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  helpText: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 24,
-  },
-  messagesContainer: {
+  contentContainer: {
     flex: 1,
   },
-  messagesContent: {
+  contentWrapper: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 12,
+    paddingBottom: 20,
   },
-  messagesContentCentered: {
-    justifyContent: 'center',
+  greetingSection: {
+    paddingTop: 24,
+    paddingBottom: 16,
   },
-  messagesContentBottom: {
-    justifyContent: 'flex-end',
+  brainIconContainer: {
+    marginBottom: 8,
+  },
+  greetingText: {
+    fontSize: 30,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 4,
+    letterSpacing: -0.5,
+  },
+  helpText: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: Colors.text,
+    letterSpacing: -0.5,
+  },
+  quickActionsContainer: {
+    paddingTop: 8,
+    paddingBottom: 16,
   },
   quickActionsTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
     color: Colors.text,
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  quickActionsCards: {
+    gap: 10,
   },
   quickActionCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 14,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.04)',
   },
   quickActionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 14,
   },
   quickActionContent: {
     flex: 1,
   },
   quickActionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: Colors.text,
-    marginBottom: 4,
+    marginBottom: 2,
+    letterSpacing: -0.2,
   },
   quickActionDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textSecondary,
+    lineHeight: 18,
   },
-  quickActionsContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    paddingHorizontal: 20,
+  messagesWrapper: {
+    paddingTop: 8,
     paddingBottom: 16,
   },
-  quickActionsScroll: {
-    maxHeight: 260,
-  },
-  quickActionsWrapper: {
-    flexGrow: 1,
-    justifyContent: 'flex-end',
-    paddingBottom: 4,
-  },
   messageContainer: {
-    maxWidth: '80%',
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 16,
+    maxWidth: '78%',
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
   },
   userMessage: {
     alignSelf: 'flex-end',
     backgroundColor: Colors.primary,
+    borderBottomRightRadius: 4,
   },
   assistantMessage: {
     alignSelf: 'flex-start',
     backgroundColor: Colors.surface,
+    borderBottomLeftRadius: 4,
   },
   loaderMessage: {
     backgroundColor: 'transparent',
@@ -418,6 +456,7 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 15,
     lineHeight: 20,
+    letterSpacing: -0.1,
   },
   userMessageText: {
     color: Colors.white,
@@ -427,34 +466,43 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
     backgroundColor: Colors.white,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    gap: 8,
+    borderTopColor: 'rgba(0, 0, 0, 0.06)',
+    gap: 10,
+    marginBottom: 78,
+  },
+  inputContainerKeyboard: {
+    marginBottom: 0,
   },
   input: {
     flex: 1,
     backgroundColor: Colors.surface,
-    borderRadius: 24,
+    borderRadius: 22,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 10,
     fontSize: 15,
     color: Colors.text,
     maxHeight: 100,
-    minHeight: 40,
+    minHeight: 44,
+    lineHeight: 20,
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 0,
   },
   sendButtonDisabled: {
     backgroundColor: Colors.border,
+    opacity: 0.6,
   },
 });
