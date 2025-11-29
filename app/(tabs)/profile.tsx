@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { getSettings, UserSettings, setViewMode } from '../../lib/api';
+import { getSettings, updateSettings, UserSettings, setViewMode } from '../../lib/api';
 import { setClerkTokenGetter } from '../../lib/api';
 import { clearStoredPushToken } from '../../lib/notifications';
 import PeriLoader from '../../components/PeriLoader';
@@ -16,6 +16,9 @@ export default function Profile() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [cycleLength, setCycleLength] = useState<string>('');
+  const [periodLength, setPeriodLength] = useState<string>('');
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Set up token getter
   useEffect(() => {
@@ -37,26 +40,94 @@ export default function Profile() {
       setLoading(false);
       return;
     }
-    
-    setSettings({
-      averageCycleLength: 28,
-      averagePeriodLength: 5,
-      reminderEnabled: true,
-      reminderDaysBefore: 3,
-    });
-    setLoading(false);
-    
+
+    setLoading(true);
+
     try {
       const data = await getSettings();
       if (data) {
         setSettings(data);
+        setCycleLength(String(data.averageCycleLength || 28));
+        setPeriodLength(String(data.averagePeriodLength || 5));
+      } else {
+        setSettings(null);
+        setCycleLength('28');
+        setPeriodLength('5');
       }
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('Error loading settings:', error);
       }
+      setSettings(null);
+      setCycleLength('28');
+      setPeriodLength('5');
+    } finally {
+      setLoading(false);
     }
   }, [user]);
+
+  const handleUpdateCycleLength = useCallback(async () => {
+    const value = parseInt(cycleLength);
+    if (isNaN(value) || value < 21 || value > 45) {
+      Alert.alert('Invalid Input', 'Cycle length must be between 21 and 45 days.');
+      setCycleLength(String(settings?.averageCycleLength || 28));
+      return;
+    }
+
+    if (value === settings?.averageCycleLength) {
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const updated = await updateSettings({ averageCycleLength: value });
+      if (updated) {
+        setSettings(updated);
+        // Emit event to refresh other pages
+        DeviceEventEmitter.emit('settingsUpdated');
+        Alert.alert('Success', 'Cycle length updated successfully!');
+      }
+    } catch (error: any) {
+      console.error('Error updating cycle length:', error);
+      Alert.alert('Error', error.message || 'Failed to update cycle length. Please try again.');
+      setCycleLength(String(settings?.averageCycleLength || 28));
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [cycleLength, settings]);
+
+  const handleUpdatePeriodLength = useCallback(async () => {
+    const value = parseInt(periodLength);
+    if (isNaN(value) || value < 1 || value > 10) {
+      Alert.alert('Invalid Input', 'Period length must be between 1 and 10 days.');
+      setPeriodLength(String(settings?.averagePeriodLength || 5));
+      return;
+    }
+
+    if (value === settings?.averagePeriodLength) {
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const updated = await updateSettings({ 
+        averagePeriodLength: value,
+        periodDuration: value, // Also update periodDuration for consistency
+      });
+      if (updated) {
+        setSettings(updated);
+        // Emit event to refresh other pages
+        DeviceEventEmitter.emit('settingsUpdated');
+        Alert.alert('Success', 'Period length updated successfully!');
+      }
+    } catch (error: any) {
+      console.error('Error updating period length:', error);
+      Alert.alert('Error', error.message || 'Failed to update period length. Please try again.');
+      setPeriodLength(String(settings?.averagePeriodLength || 5));
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [periodLength, settings]);
 
   const handleSignOut = useCallback(async () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -98,26 +169,63 @@ export default function Profile() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cycle Settings</Text>
           <Text style={styles.sectionDescription}>
-            Cycle metrics are currently read-only. Reach out to support if something looks off.
+            Update your cycle and period lengths to improve predictions and calculations.
           </Text>
 
           <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Average Cycle Length</Text>
-            <View style={styles.settingValue}>
-              <Text style={styles.settingValueText}>
-                {settings?.averageCycleLength ?? 28} days
-              </Text>
+            <View style={styles.settingLabelContainer}>
+              <Text style={styles.settingLabel}>Average Cycle Length</Text>
+              <Text style={styles.settingHint}>Range: 21-45 days</Text>
+            </View>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.settingInput}
+                value={cycleLength}
+                onChangeText={(text) => {
+                  // Only allow numbers
+                  const numeric = text.replace(/[^0-9]/g, '');
+                  setCycleLength(numeric);
+                }}
+                onBlur={handleUpdateCycleLength}
+                keyboardType="number-pad"
+                editable={!isUpdating && !loading}
+                placeholder="28"
+                placeholderTextColor={Colors.textSecondary}
+              />
+              <Text style={styles.inputSuffix}>days</Text>
             </View>
           </View>
 
           <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Average Period Length</Text>
-            <View style={styles.settingValue}>
-              <Text style={styles.settingValueText}>
-                {settings?.averagePeriodLength ?? 5} days
-              </Text>
+            <View style={styles.settingLabelContainer}>
+              <Text style={styles.settingLabel}>Average Period Length</Text>
+              <Text style={styles.settingHint}>Range: 1-10 days</Text>
+            </View>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.settingInput}
+                value={periodLength}
+                onChangeText={(text) => {
+                  // Only allow numbers
+                  const numeric = text.replace(/[^0-9]/g, '');
+                  setPeriodLength(numeric);
+                }}
+                onBlur={handleUpdatePeriodLength}
+                keyboardType="number-pad"
+                editable={!isUpdating && !loading}
+                placeholder="5"
+                placeholderTextColor={Colors.textSecondary}
+              />
+              <Text style={styles.inputSuffix}>days</Text>
             </View>
           </View>
+
+          {isUpdating && (
+            <View style={styles.updatingIndicator}>
+              <PeriLoader size={20} />
+              <Text style={styles.updatingText}>Updating...</Text>
+            </View>
+          )}
         </View>
 
         {/* Account Actions */}
@@ -180,27 +288,56 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 24,
+  },
+  settingLabelContainer: {
+    flex: 1,
+    marginRight: 12,
   },
   settingLabel: {
     fontSize: 16,
     color: Colors.text,
-    flex: 1,
+    fontWeight: '500',
+    marginBottom: 4,
   },
-  settingValue: {
-    minWidth: 90,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+  settingHint: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 100,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 10,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    alignItems: 'flex-end',
   },
-  settingValueText: {
+  settingInput: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text,
+    minWidth: 40,
+    textAlign: 'right',
+    padding: 0,
+  },
+  inputSuffix: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginLeft: 4,
+  },
+  updatingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  updatingText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
   },
   signOutButton: {
     flexDirection: 'row',

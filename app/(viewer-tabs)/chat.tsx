@@ -31,7 +31,7 @@ import {
 } from '@/lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '@/lib/cache';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { calculatePredictions, getDayInfo, CyclePredictions } from '../../lib/periodCalculations';
+import { calculatePredictions, getDayInfo, CyclePredictions, buildEffectivePeriods } from '../../lib/periodCalculations';
 import PeriLoader from '../../components/PeriLoader';
 
 interface Message {
@@ -198,10 +198,11 @@ export default function ViewerChatScreen() {
           getSettings().catch(() => null),
         ]);
 
-        setPeriods(periodsData);
+        const effectivePeriods = buildEffectivePeriods(periodsData, settingsData);
+        setPeriods(effectivePeriods);
         setSettings(settingsData);
 
-        await setCachedData(periodsCacheKey, periodsData);
+        await setCachedData(periodsCacheKey, effectivePeriods);
         await setCachedData(settingsCacheKey, settingsData);
 
         const today = new Date();

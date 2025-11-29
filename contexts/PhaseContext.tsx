@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { getPeriods, getSettings } from '../lib/api';
-import { calculatePredictions, getPhaseDetailsForDate } from '../lib/periodCalculations';
+import { calculatePredictions, getPhaseDetailsForDate, buildEffectivePeriods } from '../lib/periodCalculations';
 import type { Period, UserSettings } from '../lib/api';
 import { PHASE_PALETTE, PhaseKey } from '../constants/phasePalette';
 
@@ -72,7 +72,8 @@ export const PhaseProvider = ({ children }: { children: ReactNode }) => {
         ]);
 
         if (mounted) {
-          setPeriods(periodsData);
+          const effectivePeriods = buildEffectivePeriods(periodsData, settingsData);
+          setPeriods(effectivePeriods);
           setSettings(settingsData);
           setIsLoading(false);
         }

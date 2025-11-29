@@ -284,7 +284,7 @@ export default function LoginForOtherScreen() {
             onPress={handleVerifyOTP}
             disabled={loading || otp.length !== 6}
           >
-            {loading ? <PeriLoader size={48} /> : <Text style={styles.buttonText}>Verify Code</Text>}
+            {loading ? <PeriLoader size={52} /> : <Text style={styles.buttonText}>Verify Code</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity

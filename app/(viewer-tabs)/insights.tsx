@@ -35,7 +35,7 @@ import {
   getCurrentViewModeRecord,
 } from '../../lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
-import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate } from '../../lib/periodCalculations';
+import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate, buildEffectivePeriods } from '../../lib/periodCalculations';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
@@ -322,10 +322,11 @@ export default function ViewerInsightsScreen() {
         getSettings().catch(() => null),
       ]);
 
-      setPeriods(periodsData);
+      const effectivePeriods = buildEffectivePeriods(periodsData, settingsData);
+      setPeriods(effectivePeriods);
       setSettings(settingsData);
 
-      await setCachedData(periodsCacheKey, periodsData);
+      await setCachedData(periodsCacheKey, effectivePeriods);
       await setCachedData(settingsCacheKey, settingsData);
 
       const [symptoms, moods, reminderStatus] = await Promise.all([

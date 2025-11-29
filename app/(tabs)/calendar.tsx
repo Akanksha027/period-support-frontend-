@@ -31,7 +31,7 @@ import {
   getCurrentViewModeRecord,
 } from '../../lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
-import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate } from '../../lib/periodCalculations';
+import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate, buildEffectivePeriods } from '../../lib/periodCalculations';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
@@ -46,51 +46,71 @@ function getPhaseInfoForDate(
   periods: Period[],
   predictions: CyclePredictions,
   settings: UserSettings | null
-): { phaseName: string; phaseDay: number } {
-  const dayInfo = getDayInfo(date, periods, predictions);
-  const sortedPeriods = [...periods].sort(
-    (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
-  );
+): { phaseName: string; phaseDay: number } | null {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dateNormalized = new Date(date);
+  dateNormalized.setHours(0, 0, 0, 0);
 
-  let phaseName = 'Cycle';
+  // Get phase details using the main function
+  const phaseDetails = getPhaseDetailsForDate(date, periods, predictions, settings);
+  
+  // If no phase details (null), return null
+  if (!phaseDetails) {
+    return null;
+  }
+
+  // For past dates without logged periods, return null
+  if (dateNormalized < today && phaseDetails.phase !== 'menstrual') {
+    return null;
+  }
+
+  // Calculate phase day number based on phase start
   let phaseDay = 1;
+  if (phaseDetails.phaseStart) {
+    const daysSinceStart = Math.floor(
+      (dateNormalized.getTime() - phaseDetails.phaseStart.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    phaseDay = Math.max(1, daysSinceStart + 1);
+  }
 
-  if (sortedPeriods.length > 0) {
-    const lastPeriodStart = new Date(sortedPeriods[0].startDate);
-    lastPeriodStart.setHours(0, 0, 0, 0);
-    const lastPeriodEnd = sortedPeriods[0].endDate
-      ? new Date(sortedPeriods[0].endDate)
-      : new Date(lastPeriodStart.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000);
-    lastPeriodEnd.setHours(0, 0, 0, 0);
-
+  // Handle different phases
+  if (phaseDetails.phase === 'menstrual') {
     const periodInfo = getPeriodDayInfo(
       date,
       periods,
       predictions.periodLength || settings?.averagePeriodLength || 5
     );
-    if (dayInfo.isPeriod && periodInfo) {
-      phaseName = 'Period';
-      phaseDay = periodInfo.dayNumber;
-    } else if (dayInfo.isFertile && predictions.fertileWindowStart) {
-      phaseName = 'Ovulation';
-      const fertileStart = new Date(predictions.fertileWindowStart);
-      fertileStart.setHours(0, 0, 0, 0);
-      const daysSinceFertileStart = Math.floor((date.getTime() - fertileStart.getTime()) / (1000 * 60 * 60 * 24));
-      phaseDay = Math.max(1, daysSinceFertileStart + 1);
-    } else if (dayInfo.isPMS && predictions.ovulationDate) {
-      phaseName = 'Luteal';
-      const ovulationDate = new Date(predictions.ovulationDate);
-      ovulationDate.setHours(0, 0, 0, 0);
-      const daysSinceOvulation = Math.floor((date.getTime() - ovulationDate.getTime()) / (1000 * 60 * 60 * 24));
-      phaseDay = Math.max(1, daysSinceOvulation + 1);
+    if (periodInfo) {
+      return {
+        phaseName: phaseDetails.isPredicted ? 'Predicted Period' : 'Period',
+        phaseDay: periodInfo.dayNumber,
+      };
     } else {
-      phaseName = 'Follicular';
-      const daysSincePeriodEnd = Math.floor((date.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24));
-      phaseDay = Math.max(1, daysSincePeriodEnd + 1);
+      return {
+        phaseName: phaseDetails.isPredicted ? 'Predicted Period' : 'Period',
+        phaseDay: phaseDay,
+      };
     }
+  } else if (phaseDetails.phase === 'ovulation') {
+    return {
+      phaseName: 'Ovulation',
+      phaseDay: phaseDay,
+    };
+  } else if (phaseDetails.phase === 'luteal') {
+    return {
+      phaseName: 'Luteal',
+      phaseDay: phaseDay,
+    };
+  } else if (phaseDetails.phase === 'follicular') {
+    return {
+      phaseName: 'Follicular',
+      phaseDay: phaseDay,
+    };
   }
 
-  return { phaseName, phaseDay };
+  // Default fallback
+  return null;
 }
 
 export default function CalendarScreen() {
@@ -185,10 +205,11 @@ export default function CalendarScreen() {
         getPeriods().catch(() => []),
         getSettings().catch(() => null),
       ]);
-      setPeriods(periodsData);
+      const effectivePeriods = buildEffectivePeriods(periodsData, settingsData);
+      setPeriods(effectivePeriods);
       setSettings(settingsData);
 
-      await setCachedData(periodsCacheKey, periodsData);
+      await setCachedData(periodsCacheKey, effectivePeriods);
       await setCachedData(settingsCacheKey, settingsData);
     } catch (error: any) {
       if (error.response?.status !== 401) {
@@ -288,6 +309,16 @@ export default function CalendarScreen() {
     }, [user?.id, isSignedIn, loadData])
   );
 
+  // Listen for settings updates
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener('settingsUpdated', () => {
+      if (userRef.current && isSignedInRef.current) {
+        loadData();
+      }
+    });
+    return () => subscription.remove();
+  }, [loadData]);
+
   const getDaysInMonth = useCallback((date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -315,29 +346,26 @@ export default function CalendarScreen() {
       today.setHours(0, 0, 0, 0);
 
       const startOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const startOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-      const startOfFollowingMonth = new Date(today.getFullYear(), today.getMonth() + 2, 1);
+      const startOfSixMonthsAhead = new Date(today.getFullYear(), today.getMonth() + 6, 1);
 
       const monthKey = new Date(normalizedDate.getFullYear(), normalizedDate.getMonth(), 1);
       const isCurrentMonth = monthKey.getTime() === startOfCurrentMonth.getTime();
-      const isNextMonth = monthKey.getTime() === startOfNextMonth.getTime();
       const isBeforeCurrentMonth = monthKey.getTime() < startOfCurrentMonth.getTime();
-      const isBeyondNextMonth = monthKey.getTime() >= startOfFollowingMonth.getTime();
+      const isBeyondSixMonths = monthKey.getTime() >= startOfSixMonthsAhead.getTime();
 
       const fallbackPeriodLength = Math.max(1, predictions?.periodLength || settings?.averagePeriodLength || 5);
 
       const isActualPeriodDay = periods.some((period) => {
         const start = new Date(period.startDate);
         start.setHours(0, 0, 0, 0);
-        const end = period.endDate
-          ? new Date(period.endDate)
-          : (() => {
-              const assumed = new Date(period.startDate);
-              assumed.setHours(0, 0, 0, 0);
-              assumed.setDate(assumed.getDate() + fallbackPeriodLength - 1);
-              return assumed;
-            })();
+        // Always use current period length setting, not the stored endDate
+        // This ensures periods display with the user's current preference
+        const end = new Date(period.startDate);
         end.setHours(0, 0, 0, 0);
+        // Calculate end date: if period length is 5, days are 0,1,2,3,4 (5 days total)
+        // So we add (periodLength - 1) to get the last day
+        end.setDate(end.getDate() + fallbackPeriodLength - 1);
+        end.setHours(23, 59, 59, 999); // Set to end of day to include the full last day
         return normalizedDate.getTime() >= start.getTime() && normalizedDate.getTime() <= end.getTime();
       });
 
@@ -345,28 +373,21 @@ export default function CalendarScreen() {
         return { phase: 'menstrual' as PhaseKey, color: PHASE_PALETTE.menstrual.color, isPredicted: false };
       }
 
-      if (isBeforeCurrentMonth || isBeyondNextMonth) {
+      // Allow predictions for up to 6 months ahead
+      if (isBeforeCurrentMonth || isBeyondSixMonths) {
         return { phase: null, color: null, isPredicted: false };
       }
 
-      let allowPredicted = false;
-      if (isCurrentMonth) {
-        allowPredicted = true;
-      } else if (isNextMonth) {
-        if (!predictions.nextPeriodDate) {
-          allowPredicted = true;
-        } else {
-          const nextPeriod = new Date(predictions.nextPeriodDate);
-          nextPeriod.setHours(0, 0, 0, 0);
-          allowPredicted = normalizedDate.getTime() <= nextPeriod.getTime();
-        }
-      }
-
-      if (!allowPredicted) {
-        return { phase: null, color: null, isPredicted: false };
-      }
+      // Allow predictions for current month and up to 6 months ahead
+      const allowPredicted = !isBeforeCurrentMonth && !isBeyondSixMonths;
 
       const detail = getPhaseDetailsForDate(normalizedDate, periods, predictions, settings);
+      
+      // If no phase details (null), return no phase
+      if (!detail) {
+        return { phase: null, color: null, isPredicted: false };
+      }
+      
       const meta = PHASE_PALETTE[detail.phase];
       return { phase: detail.phase, color: meta.color, isPredicted: detail.isPredicted };
     },
@@ -402,17 +423,14 @@ export default function CalendarScreen() {
       endDate.setHours(23, 59, 59, 999);
 
       // Prevent duplicate or overlapping period entries
+      // Always use current period length setting for overlap checks
       const overlapsExisting = periods.some((period) => {
         const start = new Date(period.startDate);
         start.setHours(0, 0, 0, 0);
-        const existingEnd = period.endDate
-          ? new Date(period.endDate)
-          : (() => {
-              const assumed = new Date(period.startDate);
-              assumed.setHours(0, 0, 0, 0);
-              assumed.setDate(assumed.getDate() + periodLength - 1);
-              return assumed;
-            })();
+        // Always calculate end date using current period length setting
+        const existingEnd = new Date(period.startDate);
+        existingEnd.setHours(0, 0, 0, 0);
+        existingEnd.setDate(existingEnd.getDate() + periodLength - 1);
         existingEnd.setHours(23, 59, 59, 999);
         return date >= start && date <= existingEnd;
       });
@@ -705,14 +723,24 @@ export default function CalendarScreen() {
                 })}
               </Text>
 
-              {/* Phase Information */}
-              {selectedDatePhaseInfo && (
+              {/* Phase Information - Only show for logged periods or predicted periods */}
+              {selectedDatePhaseInfo ? (
                 <View style={styles.phaseInfoContainer}>
                   <Text style={styles.phaseInfoText}>
-                    {selectedDatePhaseInfo.phaseName} Phase - Day {selectedDatePhaseInfo.phaseDay}
+                    {selectedDatePhaseInfo.phaseName} - Day {selectedDatePhaseInfo.phaseDay}
                   </Text>
                 </View>
-              )}
+              ) : selectedDate && (() => {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const selected = new Date(selectedDate);
+                selected.setHours(0, 0, 0, 0);
+                return selected < today ? (
+                  <View style={styles.phaseInfoContainer}>
+                    <Text style={styles.phaseInfoText}>No period logged for this date</Text>
+                  </View>
+                ) : null;
+              })()}
 
               {/* Period Information */}
               {selectedDatePeriod && (

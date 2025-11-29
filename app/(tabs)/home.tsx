@@ -44,6 +44,8 @@ import {
   CyclePredictions,
   getPhaseNote,
   getPhaseDetailsForDate,
+  buildEffectivePeriods,
+  generatePredictedPeriods,
 } from '../../lib/periodCalculations';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
 import { usePhase } from '../../contexts/PhaseContext';
@@ -161,19 +163,25 @@ export default function HomeScreen() {
     }
   }, [user, isSignedIn]);
 
+  const displayPeriods = useMemo(
+    () => buildEffectivePeriods(periods, settings),
+    [periods, settings]
+  );
+
   const predictions = useMemo<CyclePredictions>(() => {
-    return calculatePredictions(periods, settings);
-  }, [periods, settings]);
+    const reference = periods.length > 0 ? periods : displayPeriods;
+    return calculatePredictions(reference, settings);
+  }, [periods, displayPeriods, settings]);
 
   const currentPeriodInfo = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return getPeriodDayInfo(
       today,
-      periods,
+      displayPeriods,
       predictions.periodLength || settings?.averagePeriodLength || 5
     );
-  }, [periods, predictions, settings?.averagePeriodLength]);
+  }, [displayPeriods, predictions, settings?.averagePeriodLength]);
 
   const isOnPeriod = useMemo(() => {
     return currentPeriodInfo !== null;
@@ -182,11 +190,43 @@ export default function HomeScreen() {
   const currentCycleInfo = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const phaseDetail = getPhaseDetailsForDate(today, periods, predictions, settings);
-    const metadata = PHASE_PALETTE[phaseDetail.phase];
-    const dayInfo = getDayInfo(today, periods, predictions);
+    const phaseDetail = getPhaseDetailsForDate(today, displayPeriods, predictions, settings);
+    
+    // Handle null phase detail (no phase information available)
+    if (!phaseDetail) {
+      // Default to follicular phase with default metadata
+      const defaultMetadata = PHASE_PALETTE.follicular;
+      const dayInfo = getDayInfo(today, displayPeriods, predictions);
+      
+      const sortedPeriods = [...displayPeriods].sort(
+        (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+      );
 
-    const sortedPeriods = [...periods].sort(
+      let cycleDay = 1;
+      if (sortedPeriods.length > 0) {
+        const lastPeriodStart = new Date(sortedPeriods[0].startDate);
+        lastPeriodStart.setHours(0, 0, 0, 0);
+        const daysSinceLastPeriod = Math.floor(
+          (today.getTime() - lastPeriodStart.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        cycleDay = daysSinceLastPeriod + 1;
+      }
+
+      return {
+        cycleDay,
+        phaseKey: 'follicular' as PhaseKey,
+        phaseDay: 1,
+        phaseEmoji: defaultMetadata.emoji,
+        phaseMeta: defaultMetadata,
+        dayInfo,
+        isPredicted: false,
+      };
+    }
+    
+    const metadata = PHASE_PALETTE[phaseDetail.phase];
+    const dayInfo = getDayInfo(today, displayPeriods, predictions);
+
+    const sortedPeriods = [...displayPeriods].sort(
       (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
     );
 
@@ -216,7 +256,7 @@ export default function HomeScreen() {
       dayInfo,
       isPredicted: phaseDetail.isPredicted,
     };
-  }, [periods, predictions, settings]);
+  }, [displayPeriods, predictions, settings]);
 
   const daysUntilPeriod = useMemo(() => {
     if (isOnPeriod || !predictions.nextPeriodDate) return null;
@@ -228,10 +268,19 @@ export default function HomeScreen() {
     return diff > 0 ? diff : null;
   }, [predictions.nextPeriodDate, isOnPeriod]);
 
+  const upcomingPredicted = useMemo(() => {
+    // Generate predictions for 6 months ahead
+    const base = generatePredictedPeriods(periods.length > 0 ? periods : displayPeriods, settings, 6);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const future = base.filter((cycle) => cycle.startDate.getTime() > today.getTime());
+    return future;
+  }, [periods, displayPeriods, settings]);
+
   // Check if user has no period data
   const hasNoPeriodData = useMemo(() => {
-    return periods.length === 0;
-  }, [periods.length]);
+    return displayPeriods.length === 0;
+  }, [displayPeriods.length]);
 
   const phaseGradientColors = useMemo((): [string, string, string] => {
     return currentCycleInfo.phaseMeta.gradient;
@@ -392,6 +441,15 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, [loadData]);
 
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener('settingsUpdated', () => {
+      if (userRef.current && isSignedInRef.current) {
+        loadData();
+      }
+    });
+    return () => subscription.remove();
+  }, [loadData]);
+
   useFocusEffect(
     useCallback(() => {
       if (user && isSignedIn && !loadingRef.current) {
@@ -438,18 +496,16 @@ export default function HomeScreen() {
       endDate.setDate(endDate.getDate() + periodLength - 1);
       endDate.setHours(23, 59, 59, 999);
 
+      // Always use current period length setting for overlap checks
       const overlapsExisting = periods.some((period) => {
         const start = new Date(period.startDate);
         start.setHours(0, 0, 0, 0);
-        const existingEnd = period.endDate
-          ? new Date(period.endDate)
-          : (() => {
-              const assumed = new Date(period.startDate);
-              assumed.setHours(0, 0, 0, 0);
-              assumed.setDate(assumed.getDate() + periodLength - 1);
-              return assumed;
-            })();
-        existingEnd.setHours(23, 59, 59, 999);
+        // Always calculate end date using current period length setting
+        // If period length is 5, days are 0,1,2,3,4 (5 days total)
+        const existingEnd = new Date(period.startDate);
+        existingEnd.setHours(0, 0, 0, 0);
+        existingEnd.setDate(existingEnd.getDate() + periodLength - 1);
+        existingEnd.setHours(23, 59, 59, 999); // Set to end of day
         return today >= start && today <= existingEnd;
       });
 
@@ -1026,6 +1082,33 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {upcomingPredicted.length > 0 && (
+          <View style={styles.futureCard}>
+            <Text style={styles.futureHeading}>Upcoming periods (next 6 months)</Text>
+            {upcomingPredicted.slice(0, 12).map((cycle, index) => {
+              const cycleLengthDays =
+                Math.round((cycle.endDate.getTime() - cycle.startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+              return (
+                <View key={`${cycle.startDate.toISOString()}-${index}`} style={styles.futureRow}>
+                  <View>
+                    <Text style={styles.futureDate}>
+                      {cycle.startDate.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </Text>
+                    <Text style={styles.futureLabel}>
+                      {cycle.startDate.toLocaleDateString('en-US', { weekday: 'short' })}
+                    </Text>
+                  </View>
+                  <Text style={styles.futureDuration}>{cycleLengthDays} day{cycleLengthDays === 1 ? '' : 's'}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {/* Quick Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
@@ -1037,7 +1120,7 @@ export default function HomeScreen() {
             <Text style={styles.statLabel}>Avg Period</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{periods.length}</Text>
+            <Text style={styles.statValue}>{displayPeriods.length}</Text>
             <Text style={styles.statLabel}>Periods</Text>
           </View>
         </View>

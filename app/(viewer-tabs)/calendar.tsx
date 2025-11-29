@@ -28,7 +28,7 @@ import {
   getCurrentViewModeRecord,
 } from '../../lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
-import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate } from '../../lib/periodCalculations';
+import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate, buildEffectivePeriods } from '../../lib/periodCalculations';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
@@ -43,51 +43,71 @@ function getPhaseInfoForDate(
   periods: Period[],
   predictions: CyclePredictions,
   settings: UserSettings | null
-): { phaseName: string; phaseDay: number } {
-  const dayInfo = getDayInfo(date, periods, predictions);
-  const sortedPeriods = [...periods].sort(
-    (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
-  );
+): { phaseName: string; phaseDay: number } | null {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dateNormalized = new Date(date);
+  dateNormalized.setHours(0, 0, 0, 0);
 
-  let phaseName = 'Cycle';
+  // Get phase details using the main function
+  const phaseDetails = getPhaseDetailsForDate(date, periods, predictions, settings);
+  
+  // If no phase details (null), return null
+  if (!phaseDetails) {
+    return null;
+  }
+
+  // For past dates without logged periods, return null
+  if (dateNormalized < today && phaseDetails.phase !== 'menstrual') {
+    return null;
+  }
+
+  // Calculate phase day number based on phase start
   let phaseDay = 1;
+  if (phaseDetails.phaseStart) {
+    const daysSinceStart = Math.floor(
+      (dateNormalized.getTime() - phaseDetails.phaseStart.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    phaseDay = Math.max(1, daysSinceStart + 1);
+  }
 
-  if (sortedPeriods.length > 0) {
-    const lastPeriodStart = new Date(sortedPeriods[0].startDate);
-    lastPeriodStart.setHours(0, 0, 0, 0);
-    const lastPeriodEnd = sortedPeriods[0].endDate
-      ? new Date(sortedPeriods[0].endDate)
-      : new Date(lastPeriodStart.getTime() + (settings?.averagePeriodLength || 5) * 24 * 60 * 60 * 1000);
-    lastPeriodEnd.setHours(0, 0, 0, 0);
-
+  // Handle different phases
+  if (phaseDetails.phase === 'menstrual') {
     const periodInfo = getPeriodDayInfo(
       date,
       periods,
       predictions.periodLength || settings?.averagePeriodLength || 5
     );
-    if (dayInfo.isPeriod && periodInfo) {
-      phaseName = 'Period';
-      phaseDay = periodInfo.dayNumber;
-    } else if (dayInfo.isFertile && predictions.fertileWindowStart) {
-      phaseName = 'Ovulation';
-      const fertileStart = new Date(predictions.fertileWindowStart);
-      fertileStart.setHours(0, 0, 0, 0);
-      const daysSinceFertileStart = Math.floor((date.getTime() - fertileStart.getTime()) / (1000 * 60 * 60 * 24));
-      phaseDay = Math.max(1, daysSinceFertileStart + 1);
-    } else if (dayInfo.isPMS && predictions.ovulationDate) {
-      phaseName = 'Luteal';
-      const ovulationDate = new Date(predictions.ovulationDate);
-      ovulationDate.setHours(0, 0, 0, 0);
-      const daysSinceOvulation = Math.floor((date.getTime() - ovulationDate.getTime()) / (1000 * 60 * 60 * 24));
-      phaseDay = Math.max(1, daysSinceOvulation + 1);
+    if (periodInfo) {
+      return {
+        phaseName: phaseDetails.isPredicted ? 'Predicted Period' : 'Period',
+        phaseDay: periodInfo.dayNumber,
+      };
     } else {
-      phaseName = 'Follicular';
-      const daysSincePeriodEnd = Math.floor((date.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24));
-      phaseDay = Math.max(1, daysSincePeriodEnd + 1);
+      return {
+        phaseName: phaseDetails.isPredicted ? 'Predicted Period' : 'Period',
+        phaseDay: phaseDay,
+      };
     }
+  } else if (phaseDetails.phase === 'ovulation') {
+    return {
+      phaseName: 'Ovulation',
+      phaseDay: phaseDay,
+    };
+  } else if (phaseDetails.phase === 'luteal') {
+    return {
+      phaseName: 'Luteal',
+      phaseDay: phaseDay,
+    };
+  } else if (phaseDetails.phase === 'follicular') {
+    return {
+      phaseName: 'Follicular',
+      phaseDay: phaseDay,
+    };
   }
 
-  return { phaseName, phaseDay };
+  // Default fallback
+  return null;
 }
 
 export default function ViewerCalendarScreen() {
@@ -208,10 +228,11 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
         getPeriods().catch(() => []),
         getSettings().catch(() => null),
       ]);
-      setPeriods(periodsData);
+      const effectivePeriods = buildEffectivePeriods(periodsData, settingsData);
+      setPeriods(effectivePeriods);
       setSettings(settingsData);
 
-      await setCachedData(periodsCacheKey, periodsData);
+      await setCachedData(periodsCacheKey, effectivePeriods);
       await setCachedData(settingsCacheKey, settingsData);
     } catch (error: any) {
       if (error.response?.status !== 401) {
@@ -345,29 +366,26 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
       today.setHours(0, 0, 0, 0);
 
       const startOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const startOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-      const startOfFollowingMonth = new Date(today.getFullYear(), today.getMonth() + 2, 1);
+      const startOfSixMonthsAhead = new Date(today.getFullYear(), today.getMonth() + 6, 1);
 
       const monthKey = new Date(normalizedDate.getFullYear(), normalizedDate.getMonth(), 1);
       const isCurrentMonth = monthKey.getTime() === startOfCurrentMonth.getTime();
-      const isNextMonth = monthKey.getTime() === startOfNextMonth.getTime();
       const isBeforeCurrentMonth = monthKey.getTime() < startOfCurrentMonth.getTime();
-      const isBeyondNextMonth = monthKey.getTime() >= startOfFollowingMonth.getTime();
+      const isBeyondSixMonths = monthKey.getTime() >= startOfSixMonthsAhead.getTime();
 
       const fallbackPeriodLength = Math.max(1, predictions?.periodLength || settings?.averagePeriodLength || 5);
 
       const isActualPeriodDay = periods.some((period) => {
         const start = new Date(period.startDate);
         start.setHours(0, 0, 0, 0);
-        const end = period.endDate
-          ? new Date(period.endDate)
-          : (() => {
-              const assumed = new Date(period.startDate);
-              assumed.setHours(0, 0, 0, 0);
-              assumed.setDate(assumed.getDate() + fallbackPeriodLength - 1);
-              return assumed;
-            })();
+        // Always use current period length setting, not the stored endDate
+        // This ensures periods display with the user's current preference
+        const end = new Date(period.startDate);
         end.setHours(0, 0, 0, 0);
+        // Calculate end date: if period length is 5, days are 0,1,2,3,4 (5 days total)
+        // So we add (periodLength - 1) to get the last day
+        end.setDate(end.getDate() + fallbackPeriodLength - 1);
+        end.setHours(23, 59, 59, 999); // Set to end of day to include the full last day
         return normalizedDate.getTime() >= start.getTime() && normalizedDate.getTime() <= end.getTime();
       });
 
@@ -375,28 +393,21 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
         return { phase: 'menstrual' as PhaseKey, color: PHASE_PALETTE.menstrual.color, isPredicted: false };
       }
 
-      if (isBeforeCurrentMonth || isBeyondNextMonth) {
+      // Allow predictions for up to 6 months ahead
+      if (isBeforeCurrentMonth || isBeyondSixMonths) {
         return { phase: null, color: null, isPredicted: false };
       }
 
-      let allowPredicted = false;
-      if (isCurrentMonth) {
-        allowPredicted = true;
-      } else if (isNextMonth) {
-        if (!predictions.nextPeriodDate) {
-          allowPredicted = true;
-        } else {
-          const nextPeriod = new Date(predictions.nextPeriodDate);
-          nextPeriod.setHours(0, 0, 0, 0);
-          allowPredicted = normalizedDate.getTime() <= nextPeriod.getTime();
-        }
-      }
-
-      if (!allowPredicted) {
-        return { phase: null, color: null, isPredicted: false };
-      }
+      // Allow predictions for current month and up to 6 months ahead
+      const allowPredicted = !isBeforeCurrentMonth && !isBeyondSixMonths;
 
       const detail = getPhaseDetailsForDate(normalizedDate, periods, predictions, settings);
+      
+      // If no phase details (null), return no phase
+      if (!detail) {
+        return { phase: null, color: null, isPredicted: false };
+      }
+      
       const meta = PHASE_PALETTE[detail.phase];
       return { phase: detail.phase, color: meta.color, isPredicted: detail.isPredicted };
     },
@@ -597,17 +608,33 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
             <ScrollView style={styles.modalBody}>
               {selectedDate && (
                 <>
-                  {/* Phase Information */}
+                  {/* Phase Information - Only show for logged periods or predicted periods */}
                   {(() => {
                     const phaseInfo = getPhaseInfoForDate(selectedDate, periods, predictions, settings);
-                    return (
-                      <View style={styles.phaseInfo}>
-                        <Text style={styles.phaseLabel}>Phase:</Text>
-                        <Text style={styles.phaseValue}>
-                          {phaseInfo.phaseName} - Day {phaseInfo.phaseDay}
-                        </Text>
-                      </View>
-                    );
+                    if (phaseInfo) {
+                      return (
+                        <View style={styles.phaseInfo}>
+                          <Text style={styles.phaseLabel}>Phase:</Text>
+                          <Text style={styles.phaseValue}>
+                            {phaseInfo.phaseName} - Day {phaseInfo.phaseDay}
+                          </Text>
+                        </View>
+                      );
+                    } else if (selectedDate) {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const selected = new Date(selectedDate);
+                      selected.setHours(0, 0, 0, 0);
+                      if (selected < today) {
+                        return (
+                          <View style={styles.phaseInfo}>
+                            <Text style={styles.phaseLabel}>Phase:</Text>
+                            <Text style={styles.phaseValue}>No period logged for this date</Text>
+                          </View>
+                        );
+                      }
+                    }
+                    return null;
                   })()}
 
                   {loadingLogs ? (

@@ -564,7 +564,7 @@ export const getSettings = async (): Promise<UserSettings | null> => {
 
 export const updateSettings = async (settings: Partial<UserSettings>): Promise<UserSettings | null> => {
   try {
-    const response = await api.put('/api/user/settings', settings);
+    const response = await api.patch('/api/user/settings', settings);
     return response.data.settings || response.data || null;
   } catch (error) {
     console.error('[API] Failed to update settings', error);
