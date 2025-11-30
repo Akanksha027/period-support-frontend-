@@ -562,6 +562,14 @@ export const getSettings = async (): Promise<UserSettings | null> => {
   }
 };
 
+
+// Get AI predictions
+export const getAIPredictions = async () => {
+  const response = await api.post('/api/predictions/ai')
+  return response.data
+}
+
+
 export const updateSettings = async (settings: Partial<UserSettings>): Promise<UserSettings | null> => {
   try {
     const response = await api.patch('/api/user/settings', settings);
@@ -572,12 +580,14 @@ export const updateSettings = async (settings: Partial<UserSettings>): Promise<U
   }
 };
 
+
+
 // Symptoms API functions
 export const getSymptoms = async (startDate?: string, endDate?: string): Promise<Symptom[]> => {
   const params: any = {};
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
-  
+
   const response = await api.get('/api/symptoms', { params });
   return response.data.symptoms || [];
 };
@@ -604,7 +614,7 @@ export const getMoods = async (startDate?: string, endDate?: string): Promise<Mo
   const params: any = {};
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
-  
+
   const response = await api.get('/api/moods', { params });
   return response.data.moods || [];
 };

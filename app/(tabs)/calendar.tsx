@@ -32,6 +32,7 @@ import {
 } from '../../lib/api';
 import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate, buildEffectivePeriods } from '../../lib/periodCalculations';
+import { useAIPredictions, invalidatePredictionsCache } from '../../lib/aiPredictions';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
@@ -54,7 +55,7 @@ function getPhaseInfoForDate(
 
   // Get phase details using the main function
   const phaseDetails = getPhaseDetailsForDate(date, periods, predictions, settings);
-  
+
   // If no phase details (null), return null
   if (!phaseDetails) {
     return null;
@@ -157,9 +158,13 @@ export default function CalendarScreen() {
     }
   }, [getToken]);
 
-  const predictions = useMemo<CyclePredictions>(() => {
-    return calculatePredictions(periods, settings);
-  }, [periods, settings]);
+  // Use AI predictions with automatic caching and fallback
+  const { predictions, loading: aiLoading, isUsingAI } = useAIPredictions(
+    periods,
+    settings,
+    user?.id || null
+  );
+
 
   const loadData = useCallback(async () => {
     if (loadingDataRef.current) {
@@ -382,12 +387,12 @@ export default function CalendarScreen() {
       const allowPredicted = !isBeforeCurrentMonth && !isBeyondSixMonths;
 
       const detail = getPhaseDetailsForDate(normalizedDate, periods, predictions, settings);
-      
+
       // If no phase details (null), return no phase
       if (!detail) {
         return { phase: null, color: null, isPredicted: false };
       }
-      
+
       const meta = PHASE_PALETTE[detail.phase];
       return { phase: detail.phase, color: meta.color, isPredicted: detail.isPredicted };
     },
@@ -445,6 +450,9 @@ export default function CalendarScreen() {
         endDate: endDate.toISOString(),
         flowLevel: 'medium',
       });
+
+      // Invalidate AI predictions cache to trigger background refresh
+      await invalidatePredictionsCache();
 
       Alert.alert('Success', 'Period logged successfully');
       setShowDatePicker(false);

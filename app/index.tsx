@@ -107,6 +107,7 @@ export default function Index() {
 
       try {
         const token = await getToken();
+        console.log('🔑 CLERK TOKEN FOR POSTMAN:', token);
         if (!token) {
           console.log('[Index] checkUserType no token');
           setLoading(false);
