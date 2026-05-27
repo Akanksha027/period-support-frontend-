@@ -517,6 +517,17 @@ export const getUserInfo = async (): Promise<UserInfo | null> => {
   }
 };
 
+export const initializeUser = async (): Promise<UserInfo> => {
+  // GET /api/user auto-creates the user if they don't exist on the backend
+  const response = await api.get('/api/user');
+  return response.data.user || response.data;
+};
+
+export const updateUser = async (name: string): Promise<UserInfo> => {
+  const response = await api.patch('/api/user', { name });
+  return response.data.user || response.data;
+};
+
 export interface RegisterPushTokenPayload {
   expoPushToken: string;
   deviceType: string;

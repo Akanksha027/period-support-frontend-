@@ -36,7 +36,7 @@ import {
   UserInfo,
   getCurrentViewModeRecord,
 } from '../../lib/api';
-import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
+import { buildCacheKey, getCachedData, setCachedData, CacheTTL } from '../../lib/cache';
 import {
   calculatePredictions,
   getDayInfo,
@@ -393,8 +393,8 @@ export default function HomeScreen() {
       setPeriods(periodsData);
       setSettings(settingsData);
 
-      await setCachedData(periodsCacheKey, periodsData);
-      await setCachedData(settingsCacheKey, settingsData);
+      await setCachedData(periodsCacheKey, periodsData, CacheTTL.MEDIUM);
+      await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
 
       const [symptoms, moods, reminderStatus] = await Promise.all([
         getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
@@ -406,9 +406,9 @@ export default function HomeScreen() {
       setReminderEnabled(reminderStatus.enabled);
       setLastReminder(reminderStatus.lastReminder);
 
-      await setCachedData(symptomsCacheKey, symptoms);
-      await setCachedData(moodsCacheKey, moods);
-      await setCachedData(remindersCacheKey, reminderStatus);
+      await setCachedData(symptomsCacheKey, symptoms, CacheTTL.SHORT);
+      await setCachedData(moodsCacheKey, moods, CacheTTL.SHORT);
+      await setCachedData(remindersCacheKey, reminderStatus, CacheTTL.MEDIUM);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Home] Error loading data:', error);
@@ -1466,6 +1466,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     fontWeight: '500',
+  },
+  futureCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  futureHeading: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 16,
+  },
+  futureRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  futureDate: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  futureLabel: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  futureDuration: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.primary,
   },
   videoModalBackdrop: {
     flex: 1,

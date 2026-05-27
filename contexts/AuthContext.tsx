@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, useRef } from 'react'
-import { useAuth as useClerkAuth, useUser, useOAuth } from '@clerk/clerk-expo'
+import { useAuth as useClerkAuth, useUser, useOAuth, useSession } from '@clerk/clerk-expo'
 import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import * as AuthSession from 'expo-auth-session'
@@ -42,10 +42,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const { 
     isSignedIn, 
     userId, 
-    session: clerkSession, 
     getToken,
     signOut: clerkSignOut,
   } = useClerkAuth()
+  const { session: clerkSession } = useSession()
   const { user: clerkUser, isLoaded: userLoaded } = useUser()
   
   // Use AuthSession.makeRedirectUri() - this is the CORRECT way for Expo
@@ -70,7 +70,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   
   // Debug logging for auth state (reduced to prevent spam)
   // Only log when auth state actually changes significantly
-  const prevAuthStateRef = useRef<{ isSignedIn: boolean; userId: string | null | undefined }>({ isSignedIn: false, userId: null })
+  const prevAuthStateRef = useRef<{ isSignedIn: boolean | undefined; userId: string | null | undefined }>({ isSignedIn: false, userId: null })
   
   useEffect(() => {
     const currentState = { isSignedIn, userId }
@@ -379,7 +379,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.log('[AuthContext] ✅ User initialized successfully:', dbUser.email)
       
       // Mark initialization as successful
-      initializationSuccessRef.current = userId
+      initializationSuccessRef.current = userId || null
       
       // Update user name if available from Clerk and not set in database
       if (clerkUser?.firstName || clerkUser?.lastName) {
@@ -767,7 +767,7 @@ Check:
             if (clerkUser) {
               try {
                 await clerkUser.update({
-                  publicMetadata: {
+                  unsafeMetadata: {
                     loginType: loginType,
                   },
                 })
@@ -859,7 +859,7 @@ Check:
 
   // Log context value changes (reduced logging to prevent spam)
   // Only log significant state changes, not every render
-  const prevStateRef = useRef<{ userId: string | null | undefined; isSignedIn: boolean }>({ userId: null, isSignedIn: false })
+  const prevStateRef = useRef<{ userId: string | null | undefined; isSignedIn: boolean | undefined }>({ userId: null, isSignedIn: false })
   
   useEffect(() => {
     const currentState = { userId, isSignedIn }

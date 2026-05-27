@@ -21,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginForOtherScreen() {
   const router = useRouter();
-  const { isSignedIn, getToken, userId } = useAuth();
+  const { isLoaded, isSignedIn, getToken, userId } = useAuth();
   const { user } = useUser();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,27 +85,36 @@ export default function LoginForOtherScreen() {
 
   // Check if user is logged in
   useEffect(() => {
-    if (!isSignedIn) {
+    if (isLoaded && !isSignedIn) {
       showToast("Please sign in before accessing someone else's account.", 'error');
-      router.replace('/(auth)/sign-in');
+      setTimeout(() => {
+        router.replace('/(auth)/sign-in');
+      }, 0);
     }
-  }, [isSignedIn, router, showToast]);
+  }, [isLoaded, isSignedIn, router, showToast]);
 
   useEffect(() => {
     const redirectIfStored = async () => {
-      if (!isSignedIn || !viewerEmail) return;
+      if (!isLoaded || !isSignedIn || !viewerEmail) return;
       const stored = await loadStoredViewModeRecord(viewerEmail);
       if (stored?.mode === 'OTHER') {
-        router.replace('/(viewer-tabs)/insights');
+        setTimeout(() => {
+          router.replace('/(viewer-tabs)/insights');
+        }, 0);
       }
     };
 
     redirectIfStored();
-  }, [isSignedIn, viewerEmail, router]);
+  }, [isLoaded, isSignedIn, viewerEmail, router]);
 
   const handleVerifyCredentials = async () => {
     if (!email) {
       showToast('Enter an email address to continue.', 'error');
+      return;
+    }
+
+    if (!email.includes('@')) {
+      showToast('Please enter a full email address (e.g. name@gmail.com).', 'error');
       return;
     }
 

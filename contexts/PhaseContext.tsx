@@ -58,7 +58,9 @@ export const PhaseProvider = ({ children }: { children: ReactNode }) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const phaseDetails = getPhaseDetailsForDate(today, periods, predictions, settings ?? undefined);
-    setPhase(phaseDetails.phase);
+    if (phaseDetails) {
+      setPhase(phaseDetails.phase);
+    }
   }, [periods, predictions, isLoading, settings]);
 
   useEffect(() => {

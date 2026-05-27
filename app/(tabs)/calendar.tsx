@@ -30,7 +30,7 @@ import {
   Mood,
   getCurrentViewModeRecord,
 } from '../../lib/api';
-import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
+import { buildCacheKey, getCachedData, setCachedData, CacheTTL } from '../../lib/cache';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate, buildEffectivePeriods } from '../../lib/periodCalculations';
 import { useAIPredictions, invalidatePredictionsCache } from '../../lib/aiPredictions';
 import { setClerkTokenGetter } from '../../lib/api';
@@ -214,8 +214,8 @@ export default function CalendarScreen() {
       setPeriods(effectivePeriods);
       setSettings(settingsData);
 
-      await setCachedData(periodsCacheKey, effectivePeriods);
-      await setCachedData(settingsCacheKey, settingsData);
+      await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
+      await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Calendar] Error loading data:', error);
@@ -283,8 +283,8 @@ export default function CalendarScreen() {
       setSelectedDateSymptoms(symptoms);
       setSelectedDateMoods(moods);
 
-      await setCachedData(symptomsCacheKey, symptoms);
-      await setCachedData(moodsCacheKey, moods);
+      await setCachedData(symptomsCacheKey, symptoms, CacheTTL.SHORT);
+      await setCachedData(moodsCacheKey, moods, CacheTTL.SHORT);
     } catch (error: any) {
       console.error('[Calendar] Error loading logs:', error);
       setSelectedDateSymptoms([]);

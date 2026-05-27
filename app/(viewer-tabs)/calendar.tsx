@@ -27,7 +27,7 @@ import {
   UserInfo,
   getCurrentViewModeRecord,
 } from '../../lib/api';
-import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
+import { buildCacheKey, getCachedData, setCachedData, CacheTTL } from '../../lib/cache';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate, buildEffectivePeriods } from '../../lib/periodCalculations';
 import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
@@ -209,7 +209,7 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
       const info = await getUserInfo();
       if (info) {
         setUserInfo(info);
-        await setCachedData(userInfoCacheKey, info);
+        await setCachedData(userInfoCacheKey, info, CacheTTL.LONG);
         // Get viewed user's name
         if (info.userType === 'OTHER' && info.viewedUser) {
           const name = info.viewedUser.name ||
@@ -232,8 +232,8 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
       setPeriods(effectivePeriods);
       setSettings(settingsData);
 
-      await setCachedData(periodsCacheKey, effectivePeriods);
-      await setCachedData(settingsCacheKey, settingsData);
+      await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
+      await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Viewer Calendar] Error loading data:', error);
@@ -301,8 +301,8 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
       setSelectedDateSymptoms(symptoms);
       setSelectedDateMoods(moods);
 
-      await setCachedData(symptomsCacheKey, symptoms);
-      await setCachedData(moodsCacheKey, moods);
+      await setCachedData(symptomsCacheKey, symptoms, CacheTTL.SHORT);
+      await setCachedData(moodsCacheKey, moods, CacheTTL.SHORT);
     } catch (error: any) {
       console.error('[Viewer Calendar] Error loading logs:', error);
       setSelectedDateSymptoms([]);

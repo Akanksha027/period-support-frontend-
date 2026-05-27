@@ -34,7 +34,7 @@ import {
   getUserInfo,
   getCurrentViewModeRecord,
 } from '../../lib/api';
-import { buildCacheKey, getCachedData, setCachedData } from '../../lib/cache';
+import { buildCacheKey, getCachedData, setCachedData, CacheTTL } from '../../lib/cache';
 import { calculatePredictions, getDayInfo, getPeriodDayInfo, CyclePredictions, getPhaseDetailsForDate, buildEffectivePeriods } from '../../lib/periodCalculations';
 import { usePhase } from '../../contexts/PhaseContext';
 import { setClerkTokenGetter } from '../../lib/api';
@@ -138,7 +138,7 @@ export default function ViewerInsightsScreen() {
         const info = await getUserInfo();
         if (info) {
           setUserInfo(info);
-          await setCachedData(userInfoCacheKey, info);
+          await setCachedData(userInfoCacheKey, info, CacheTTL.LONG);
           if (info.userType === 'OTHER' && info.viewedUser) {
             const name = info.viewedUser.name || info.viewedUser.email?.split('@')[0] || 'User';
             setUserName(name);
@@ -174,6 +174,20 @@ export default function ViewerInsightsScreen() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const phaseDetail = getPhaseDetailsForDate(today, periods, predictions, settings);
+
+    // Handle null phase detail (no phase information available)
+    if (!phaseDetail) {
+      return {
+        cycleDay: 1,
+        phaseKey: 'follicular' as PhaseKey,
+        phaseDay: 1,
+        phaseEmoji: '🌱',
+        phaseMeta: PHASE_PALETTE.follicular,
+        dayInfo: { dayOfCycle: 1, isFuture: false },
+        isPredicted: true,
+      };
+    }
+    
     const metadata = PHASE_PALETTE[phaseDetail.phase];
     const dayInfo = getDayInfo(today, periods, predictions);
 
@@ -326,8 +340,8 @@ export default function ViewerInsightsScreen() {
       setPeriods(effectivePeriods);
       setSettings(settingsData);
 
-      await setCachedData(periodsCacheKey, effectivePeriods);
-      await setCachedData(settingsCacheKey, settingsData);
+      await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
+      await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
 
       const [symptoms, moods, reminderStatus] = await Promise.all([
         getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
@@ -339,9 +353,9 @@ export default function ViewerInsightsScreen() {
       setReminderEnabled(reminderStatus.enabled);
       setLastReminder(reminderStatus.lastReminder);
 
-      await setCachedData(symptomsCacheKey, symptoms);
-      await setCachedData(moodsCacheKey, moods);
-      await setCachedData(remindersCacheKey, reminderStatus);
+      await setCachedData(symptomsCacheKey, symptoms, CacheTTL.SHORT);
+      await setCachedData(moodsCacheKey, moods, CacheTTL.SHORT);
+      await setCachedData(remindersCacheKey, reminderStatus, CacheTTL.MEDIUM);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Viewer Insights] Error loading data:', error);

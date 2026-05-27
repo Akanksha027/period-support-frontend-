@@ -14,7 +14,7 @@ export default function AuthRoutesLayout() {
 
   // If user is already signed in, redirect to choose login type
   if (isSignedIn) {
-    return <Redirect href="/choose-login-type" />;
+    return <Redirect href="/" />;
   }
 
   // If not signed in, show auth screens

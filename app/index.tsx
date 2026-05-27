@@ -45,7 +45,7 @@ export default function Index() {
     }
   }, [getToken]);
 
-  const primaryEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? null;
+  const primaryEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? undefined;
 
   useEffect(() => {
     const initMode = async () => {
@@ -120,35 +120,28 @@ export default function Index() {
         let activeMode = viewMode;
 
         if (!activeMode && primaryEmail) {
-          // First assume SELF and see if backend confirms
-          await setViewMode('SELF', { email: primaryEmail, persist: false });
-          setViewModeState('SELF');
+          // Do NOT assume SELF. Ask the backend what the user actually is.
           effectiveInfo = await getUserInfo();
 
           if (effectiveInfo?.userType === 'SELF') {
             await setViewMode('SELF', { email: primaryEmail, persist: true });
             activeMode = 'SELF';
-          } else {
-            // Not a self account; try OTHER
-            await setViewMode('OTHER', { email: primaryEmail, persist: false });
+            setViewModeState('SELF');
+          } else if (effectiveInfo?.userType === 'OTHER' && effectiveInfo.viewedUser) {
+            await setViewMode('OTHER', {
+              email: primaryEmail,
+              viewedUserId: effectiveInfo.viewedUser.id,
+              viewedUserEmail: effectiveInfo.viewedUser.email,
+              persist: true,
+            });
+            activeMode = 'OTHER';
             setViewModeState('OTHER');
-            effectiveInfo = await getUserInfo();
-
-            if (effectiveInfo?.userType === 'OTHER' && effectiveInfo.viewedUser) {
-              await setViewMode('OTHER', {
-                email: primaryEmail,
-                viewedUserId: effectiveInfo.viewedUser.id,
-                viewedUserEmail: effectiveInfo.viewedUser.email,
-                persist: true,
-              });
-              activeMode = 'OTHER';
-            } else {
-              // Fallback to SELF if OTHER attempt failed
-              await setViewMode('SELF', { email: primaryEmail, persist: true });
-              setViewModeState('SELF');
-              activeMode = 'SELF';
-              effectiveInfo = await getUserInfo();
-            }
+          } else {
+            // User does not exist or we couldn't determine type. Leave activeMode as null
+            // so ChooseLoginType renders.
+            await setViewMode(null, { email: primaryEmail, forgetPersisted: true });
+            setViewModeState(null);
+            activeMode = null;
           }
         }
 
