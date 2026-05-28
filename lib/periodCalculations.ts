@@ -285,8 +285,7 @@ export function getPhaseDetailsForDate(
     ? resolvePeriodEnd(lastRecordedPeriod, effectivePeriodLength)
     : fallbackPeriodEnd;
 
-  // 1. Check for actual logged periods first (works for past and present)
-  if (sortedPeriods.length > 0) {
+
   // Combine logged and predicted periods into a unified timeline
   const allPeriods = [
     ...sortedPeriods.map(p => {
