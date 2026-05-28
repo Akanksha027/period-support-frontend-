@@ -631,7 +631,7 @@ export default function CalendarScreen() {
               const isPredictedMenstrual = status.phase === 'menstrual' && status.isPredicted;
               
               // Use a distinct pink color for predicted periods
-              const baseColor = isPredictedMenstrual ? '#FF69B4' : status.color;
+              const baseColor = isPredictedMenstrual ? '#FFB6C1' : status.color;
               
               // For predicted menstrual, we want it to be clearly visible so use higher opacity
               const finalAlpha = isPredictedMenstrual ? '55' : (status.isPredicted ? predictedAlpha : actualAlpha);
@@ -679,7 +679,7 @@ export default function CalendarScreen() {
               );
             })}
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#FF69B4' }]} />
+              <View style={[styles.legendDot, { backgroundColor: '#FFB6C1' }]} />
               <Text style={styles.legendText}>Predicted Period</Text>
             </View>
           </View>
