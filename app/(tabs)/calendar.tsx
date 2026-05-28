@@ -201,17 +201,17 @@ export default function CalendarScreen() {
       const symptomsCacheKey = buildCacheKey(['symptoms', cacheScope]);
       const moodsCacheKey = buildCacheKey(['moods', cacheScope]);
 
-      // 1. FAST CACHE LOAD (Parallel)
+      // 1. FAST CACHE LOAD (Parallel) - Use stale data for immediate UI rendering
       const [
         cachedPeriods,
         cachedSettings,
         cachedSymptoms,
         cachedMoods
       ] = await Promise.all([
-        getCachedData<Period[]>(periodsCacheKey),
-        getCachedData<UserSettings | null>(settingsCacheKey),
-        getCachedData<Symptom[]>(symptomsCacheKey),
-        getCachedData<Mood[]>(moodsCacheKey),
+        getCachedData<Period[]>(periodsCacheKey, true),
+        getCachedData<UserSettings | null>(settingsCacheKey, true),
+        getCachedData<Symptom[]>(symptomsCacheKey, true),
+        getCachedData<Mood[]>(moodsCacheKey, true),
       ]);
 
       if (cachedPeriods !== undefined) setPeriods(cachedPeriods);

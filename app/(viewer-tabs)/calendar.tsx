@@ -176,7 +176,7 @@ export default function ViewerCalendarScreen() {
       const symptomsCacheKey = buildCacheKey(['viewer-symptoms', cacheScope]);
       const moodsCacheKey = buildCacheKey(['viewer-moods', cacheScope]);
 
-      // 1. FAST CACHE LOAD (Parallel)
+      // 1. FAST CACHE LOAD (Parallel) - Use stale data for immediate UI rendering
       const [
         cachedUserInfo,
         cachedPeriods,
@@ -184,11 +184,11 @@ export default function ViewerCalendarScreen() {
         cachedSymptoms,
         cachedMoods
       ] = await Promise.all([
-        getCachedData<UserInfo | null>(userInfoCacheKey),
-        getCachedData<Period[]>(periodsCacheKey),
-        getCachedData<UserSettings | null>(settingsCacheKey),
-        getCachedData<Symptom[]>(symptomsCacheKey),
-        getCachedData<Mood[]>(moodsCacheKey)
+        getCachedData<UserInfo | null>(userInfoCacheKey, true),
+        getCachedData<Period[]>(periodsCacheKey, true),
+        getCachedData<UserSettings | null>(settingsCacheKey, true),
+        getCachedData<Symptom[]>(symptomsCacheKey, true),
+        getCachedData<Mood[]>(moodsCacheKey, true)
       ]);
 
       if (cachedUserInfo !== undefined) {

@@ -22,7 +22,6 @@ export default function ViewerProfileScreen() {
       await clearStoredPushToken();
       await signOut();
       await setViewMode(null);
-      router.replace('/(auth)/sign-in');
     } catch (error: any) {
       console.error('[Viewer Profile] Sign out error:', error);
       Alert.alert('Sign Out Failed', error?.message || 'Please try again.');

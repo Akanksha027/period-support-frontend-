@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Colors } from '../../constants/Colors';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
 
 const { width } = Dimensions.get('window');
 
@@ -70,6 +71,8 @@ function ViewerCustomTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export default function ViewerTabLayout() {
+  usePushNotifications();
+
   return (
     <Tabs
       screenOptions={{

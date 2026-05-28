@@ -184,7 +184,6 @@ export default function Profile() {
             await clearStoredPushToken();
             await setViewMode(null);
             await signOut();
-            router.replace('/(auth)/sign-in');
           } catch (error: any) {
             Alert.alert('Error', error.message || 'Failed to sign out');
           }

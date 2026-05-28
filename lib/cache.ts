@@ -53,11 +53,14 @@ export function buildCacheKey(parts: Array<string | number | null | undefined>):
  *
  * Expired entries are silently pruned.
  */
-export async function getCachedData<T>(key: string): Promise<T | undefined> {
+export async function getCachedData<T>(key: string, returnStale = false): Promise<T | undefined> {
   // 1. Try in-memory first (fastest)
   const memEntry = memoryCache.get(key);
   if (memEntry) {
     if (!isExpired(memEntry)) {
+      return memEntry.value as T;
+    }
+    if (returnStale) {
       return memEntry.value as T;
     }
     // Expired — remove from memory
@@ -72,6 +75,9 @@ export async function getCachedData<T>(key: string): Promise<T | undefined> {
       if (!isExpired(entry)) {
         // Promote back to memory cache for next access
         memoryCache.set(key, entry);
+        return entry.value;
+      }
+      if (returnStale) {
         return entry.value;
       }
       // Expired — clean up AsyncStorage in background
