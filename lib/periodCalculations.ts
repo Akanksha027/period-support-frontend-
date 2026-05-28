@@ -153,50 +153,8 @@ export function calculatePredictions(
   const lastPeriodStart = new Date(lastPeriod.startDate);
   lastPeriodStart.setHours(0, 0, 0, 0);
 
-  // Calculate average cycle length from history
-  let totalCycleDays = 0;
-  let cycleCount = 0;
-
-  for (let i = 0; i < sortedPeriods.length - 1; i++) {
-    const current = new Date(sortedPeriods[i].startDate);
-    const next = new Date(sortedPeriods[i + 1].startDate);
-    current.setHours(0, 0, 0, 0);
-    next.setHours(0, 0, 0, 0);
-    const diff = Math.abs(next.getTime() - current.getTime());
-    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-    totalCycleDays += days;
-    cycleCount++;
-  }
-
-  const avgCycleLength =
-    cycleCount > 0
-      ? Math.round(totalCycleDays / cycleCount)
-      : (settings?.averageCycleLength || 28);
-  
-  const finalCycleLength = avgCycleLength > 0 ? avgCycleLength : 28;
-
-  // Calculate average period length
-  let totalPeriodDays = 0;
-  let periodCount = 0;
-
-  for (const period of sortedPeriods) {
-    if (period.endDate) {
-      const start = new Date(period.startDate);
-      const end = new Date(period.endDate);
-      const diff = Math.abs(end.getTime() - start.getTime());
-      const days = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
-      totalPeriodDays += days;
-      periodCount++;
-    } else {
-      totalPeriodDays += settings?.averagePeriodLength || 5;
-      periodCount++;
-    }
-  }
-
-  const avgPeriodLength =
-    periodCount > 0
-      ? Math.round(totalPeriodDays / periodCount)
-      : settings?.averagePeriodLength || 5;
+  const finalCycleLength = settings?.averageCycleLength || 28;
+  const avgPeriodLength = settings?.averagePeriodLength || settings?.periodDuration || 5;
 
   // Predict next period - calculate from START of last period
   // Cycle length is measured from the start of one period to the start of the next period

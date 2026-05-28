@@ -79,10 +79,8 @@ export function convertAIToLegacyFormat(
             pmsEnd: nextPeriod?.start_date
                 ? new Date(new Date(nextPeriod.start_date).getTime() - 24 * 60 * 60 * 1000)
                 : fallback.pmsEnd,
-            cycleLength: aiResponse.cycle_analysis?.average_cycle_length || fallback.cycleLength,
-            periodLength: nextPeriod?.end_date && nextPeriod?.start_date
-                ? Math.ceil((new Date(nextPeriod.end_date).getTime() - new Date(nextPeriod.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1
-                : fallback.periodLength,
+            cycleLength: fallback.cycleLength,
+            periodLength: fallback.periodLength,
             confidence: nextPeriod?.confidence >= 80 ? 'high' : nextPeriod?.confidence >= 50 ? 'medium' : 'low',
         };
     } catch (error) {
