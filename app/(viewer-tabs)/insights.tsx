@@ -85,7 +85,8 @@ export default function ViewerInsightsScreen() {
   const [videoVisible, setVideoVisible] = useState(false);
 
   const formattedUserName = formatDisplayName(userName);
-  const greetingText = `${getTimeGreeting()} ${formattedUserName}!`;
+  const viewerName = formatDisplayName(user?.firstName || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] || '');
+  const greetingText = `${getTimeGreeting()} ${viewerName}!`;
 
   const handleOpenInfoVideo = useCallback(() => {
     setVideoVisible(true);
@@ -970,10 +971,11 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   greeting: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: 'bold',
     color: Colors.text,
     marginBottom: 4,
+    paddingRight: 40,
   },
   subtitle: {
     fontSize: 14,
