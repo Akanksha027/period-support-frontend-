@@ -623,9 +623,9 @@ export default function CalendarScreen() {
               const status = getDayStatus(date);
               const isToday = date.toDateString() === new Date().toDateString();
               const hasColor = Boolean(status.color);
-              const actualAlpha = status.phase === 'follicular' ? '55' : '33';
+              const actualAlpha = status.phase === 'menstrual' ? '66' : (status.phase === 'follicular' ? '55' : '33');
               const predictedAlpha = status.phase === 'follicular' ? '33' : '20';
-              const borderActualAlpha = status.phase === 'follicular' ? 'CC' : 'AA';
+              const borderActualAlpha = status.phase === 'menstrual' ? 'EE' : (status.phase === 'follicular' ? 'CC' : 'AA');
               const borderPredictedAlpha = status.phase === 'follicular' ? '66' : '40';
 
               const isPredictedMenstrual = status.phase === 'menstrual' && status.isPredicted;
