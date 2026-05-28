@@ -378,13 +378,10 @@ export default function CalendarScreen() {
         return { phase: 'menstrual' as PhaseKey, color: PHASE_PALETTE.menstrual.color, isPredicted: false };
       }
 
-      // Allow predictions for up to 6 months ahead
-      if (isBeforeCurrentMonth || isBeyondSixMonths) {
+      // Allow predictions up to 6 months ahead
+      if (isBeyondSixMonths) {
         return { phase: null, color: null, isPredicted: false };
       }
-
-      // Allow predictions for current month and up to 6 months ahead
-      const allowPredicted = !isBeforeCurrentMonth && !isBeyondSixMonths;
 
       const detail = getPhaseDetailsForDate(normalizedDate, periods, predictions, settings);
 
@@ -631,11 +628,20 @@ export default function CalendarScreen() {
               const borderActualAlpha = status.phase === 'follicular' ? 'CC' : 'AA';
               const borderPredictedAlpha = status.phase === 'follicular' ? '66' : '40';
 
+              const isPredictedMenstrual = status.phase === 'menstrual' && status.isPredicted;
+              
+              // Use a distinct pink color for predicted periods
+              const baseColor = isPredictedMenstrual ? '#FF69B4' : status.color;
+              
+              // For predicted menstrual, we want it to be clearly visible so use higher opacity
+              const finalAlpha = isPredictedMenstrual ? '55' : (status.isPredicted ? predictedAlpha : actualAlpha);
+              const finalBorderAlpha = isPredictedMenstrual ? 'CC' : (status.isPredicted ? borderPredictedAlpha : borderActualAlpha);
+
               const backgroundColor = hasColor
-                ? `${status.color}${status.isPredicted ? predictedAlpha : actualAlpha}`
+                ? `${baseColor}${finalAlpha}`
                 : undefined;
               const borderColor = hasColor
-                ? `${status.color}${status.isPredicted ? borderPredictedAlpha : borderActualAlpha}`
+                ? `${baseColor}${finalBorderAlpha}`
                 : undefined;
 
               return (
@@ -673,8 +679,8 @@ export default function CalendarScreen() {
               );
             })}
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#999999' }]} />
-              <Text style={styles.legendText}>Predicted tint</Text>
+              <View style={[styles.legendDot, { backgroundColor: '#FF69B4' }]} />
+              <Text style={styles.legendText}>Predicted Period</Text>
             </View>
           </View>
         </View>

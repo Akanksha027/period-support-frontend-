@@ -204,6 +204,7 @@ export function calculatePredictions(
 
   // Confidence
   let confidence: ConfidenceLevel = 'low';
+  const cycleCount = sortedPeriods.length > 0 ? sortedPeriods.length - 1 : 0;
   if (cycleCount >= 3) {
     confidence = 'high';
   } else if (cycleCount >= 1) {
@@ -286,147 +287,90 @@ export function getPhaseDetailsForDate(
 
   // 1. Check for actual logged periods first (works for past and present)
   if (sortedPeriods.length > 0) {
-    for (const period of sortedPeriods) {
-      const start = normalise(new Date(period.startDate));
-      const end = resolvePeriodEnd(period, effectivePeriodLength);
-      // resolvePeriodEnd already sets end to 23:59:59:999, so we can use it directly
-      if (start && dayDate >= start && dayDate <= end) {
-        return {
-          phase: 'menstrual',
-          isPredicted: dayDate >= today,
-          phaseStart: start,
-          phaseEnd: end,
-        };
-      }
-    }
-  }
+  // Combine logged and predicted periods into a unified timeline
+  const allPeriods = [
+    ...sortedPeriods.map(p => {
+      const start = normalise(new Date(p.startDate));
+      return {
+        startDate: start!,
+        endDate: resolvePeriodEnd(p, effectivePeriodLength),
+        isPredicted: false
+      };
+    }),
+    ...generatePredictedPeriods(periods, settings, 6).map(p => {
+      return {
+        startDate: normalise(p.startDate)!,
+        endDate: normalise(p.endDate)!,
+        isPredicted: true
+      };
+    })
+  ].sort((a, b) => b.startDate.getTime() - a.startDate.getTime());
 
-  // Check fallback period (from settings) if no logged periods
-  if (sortedPeriods.length === 0 && fallbackPeriodStart && fallbackPeriodEnd) {
-    if (dayDate >= fallbackPeriodStart && dayDate <= fallbackPeriodEnd) {
+  // Determine allowed months for showing non-menstrual phases
+  const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  currentMonth.setHours(0, 0, 0, 0);
+  const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  prevMonth.setHours(0, 0, 0, 0);
+  const nextNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 1);
+  nextNextMonth.setHours(0, 0, 0, 0);
+
+  const dayMonth = new Date(dayDate.getFullYear(), dayDate.getMonth(), 1);
+  dayMonth.setHours(0, 0, 0, 0);
+  
+  const isAllowedMonth = dayMonth.getTime() >= prevMonth.getTime() && dayMonth.getTime() < nextNextMonth.getTime();
+
+  // 1. Check if the date falls during any period (logged or predicted)
+  for (const period of allPeriods) {
+    if (dayDate >= period.startDate && dayDate <= period.endDate) {
+      // Past predicted periods shouldn't happen, but if they do, just treat them correctly
+      const isPredicted = period.isPredicted || dayDate >= today;
       return {
         phase: 'menstrual',
-        isPredicted: dayDate >= today,
-        phaseStart: fallbackPeriodStart,
-        phaseEnd: fallbackPeriodEnd,
+        isPredicted,
+        phaseStart: period.startDate,
+        phaseEnd: period.endDate,
       };
     }
   }
 
-  // 2. For PAST dates (before today) without logged periods - return null (no phase)
-  if (dayDate < today) {
+  // 2. If it's not a period, we only show other phases if it's within the allowed months
+  if (!isAllowedMonth) {
     return null;
   }
 
-  // Determine if date is in current month or future months
-  const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  currentMonth.setHours(0, 0, 0, 0);
-  const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  nextMonth.setHours(0, 0, 0, 0);
-  const dayMonth = new Date(dayDate.getFullYear(), dayDate.getMonth(), 1);
-  dayMonth.setHours(0, 0, 0, 0);
-  const isCurrentMonth = dayMonth.getTime() === currentMonth.getTime();
-  const isFutureMonth = dayMonth.getTime() >= nextMonth.getTime();
+  // 3. Find the surrounding periods to calculate phases accurately
+  // nextPeriod is the closest period that starts AFTER the dayDate
+  const nextPeriod = [...allPeriods].reverse().find(p => p.startDate > dayDate);
+  // prevPeriod is the closest period that ends BEFORE the dayDate
+  const prevPeriod = allPeriods.find(p => p.endDate < dayDate);
 
-  // 3. Check for predicted periods (menstrual phase)
-  const predictedPeriods = generatePredictedPeriods(periods, settings, 6);
-  let isPredictedPeriod = false;
-  for (const predictedPeriod of predictedPeriods) {
-    const predictedStart = normalise(predictedPeriod.startDate);
-    const predictedEnd = normalise(predictedPeriod.endDate);
-    if (predictedStart && predictedEnd && dayDate >= predictedStart && dayDate <= predictedEnd) {
-      isPredictedPeriod = true;
-      // For current month, still return predicted period
-      // For future months, only return predicted periods
-      if (isCurrentMonth || isFutureMonth) {
-        return {
-          phase: 'menstrual',
-          isPredicted: true,
-          phaseStart: predictedStart,
-          phaseEnd: predictedEnd,
-        };
-      }
-    }
-  }
+  if (prevPeriod && nextPeriod) {
+    // Ovulation is typically 14 days before the NEXT period starts
+    const ovulationDate = new Date(nextPeriod.startDate);
+    ovulationDate.setDate(ovulationDate.getDate() - 14);
+    ovulationDate.setHours(0, 0, 0, 0);
 
-  // 4. For FUTURE months (beyond current month) - ONLY show predicted periods, no other phases
-  if (isFutureMonth) {
-    return null; // No phase info for future months except predicted periods (already checked above)
-  }
+    const fertileStart = new Date(ovulationDate);
+    fertileStart.setDate(fertileStart.getDate() - 5);
+    fertileStart.setHours(0, 0, 0, 0);
 
-  // 5. For CURRENT month only - show full cycle phases (for educational purposes)
-  if (isCurrentMonth) {
-    // Calculate cycle phases for current month
-    const nextPeriodStart = predictions.nextPeriodDate
-      ? normalise(predictions.nextPeriodDate)
-      : null;
+    const fertileEnd = new Date(ovulationDate);
+    fertileEnd.setHours(23, 59, 59, 999);
 
-    // Calculate ovulation date - use predictions if available, otherwise estimate
-    let ovulationDate = predictions.ovulationDate
-      ? normalise(predictions.ovulationDate)
-      : null;
-
-    // If no ovulation date in predictions, estimate it (typically 14 days before next period)
-    if (!ovulationDate && nextPeriodStart) {
-      ovulationDate = new Date(nextPeriodStart);
-      ovulationDate.setDate(ovulationDate.getDate() - 14);
-      ovulationDate.setHours(0, 0, 0, 0);
-    }
-
-    // Check for fertile window FIRST (5 days before ovulation to ovulation day)
-    // This includes the ovulation day itself
-    if (ovulationDate) {
-      const fertileStart = new Date(ovulationDate);
-      fertileStart.setDate(fertileStart.getDate() - 5);
-      fertileStart.setHours(0, 0, 0, 0);
-      const fertileEnd = new Date(ovulationDate);
-      fertileEnd.setHours(23, 59, 59, 999);
-
-      if (dayDate >= fertileStart && dayDate <= fertileEnd) {
-        return {
-          phase: 'ovulation', // Using ovulation phase for fertile window
-          isPredicted: true,
-          phaseStart: fertileStart,
-          phaseEnd: fertileEnd,
-        };
-      }
-    }
-
-    // Check for ovulation day specifically (if not already caught by fertile window)
-    if (ovulationDate && dayDate.getTime() === ovulationDate.getTime()) {
+    if (dayDate >= fertileStart && dayDate <= fertileEnd) {
       return {
         phase: 'ovulation',
         isPredicted: true,
-        phaseStart: ovulationDate,
-        phaseEnd: ovulationDate,
+        phaseStart: fertileStart,
+        phaseEnd: fertileEnd,
       };
     }
 
-    // Check for luteal phase (after ovulation, before next period)
-    if (ovulationDate && nextPeriodStart) {
-      const lutealStart = new Date(ovulationDate);
-      lutealStart.setDate(lutealStart.getDate() + 1);
-      lutealStart.setHours(0, 0, 0, 0);
-      const lutealEnd = new Date(nextPeriodStart);
-      lutealEnd.setDate(lutealEnd.getDate() - 1);
-      lutealEnd.setHours(23, 59, 59, 999);
-
-      if (dayDate >= lutealStart && dayDate <= lutealEnd) {
-        return {
-          phase: 'luteal',
-          isPredicted: true,
-          phaseStart: lutealStart,
-          phaseEnd: lutealEnd,
-        };
-      }
-    }
-
-    // Check for follicular phase (after last period end, before ovulation)
-    if (lastPeriodEnd && ovulationDate && dayDate > lastPeriodEnd && dayDate < ovulationDate) {
-      const follicularStart = new Date(lastPeriodEnd);
+    if (dayDate > prevPeriod.endDate && dayDate < fertileStart) {
+      const follicularStart = new Date(prevPeriod.endDate);
       follicularStart.setDate(follicularStart.getDate() + 1);
       follicularStart.setHours(0, 0, 0, 0);
-      const follicularEnd = new Date(ovulationDate);
+      const follicularEnd = new Date(fertileStart);
       follicularEnd.setDate(follicularEnd.getDate() - 1);
       follicularEnd.setHours(23, 59, 59, 999);
       return {
@@ -437,134 +381,23 @@ export function getPhaseDetailsForDate(
       };
     }
 
-    // If we have a next period but no ovulation date, calculate phases
-    // Ovulation typically occurs 14 days before next period
-    if (lastPeriodEnd && nextPeriodStart) {
-      const estimatedOvulation = new Date(nextPeriodStart);
-      estimatedOvulation.setDate(estimatedOvulation.getDate() - 14);
-      estimatedOvulation.setHours(0, 0, 0, 0);
-
-      // Follicular phase: after period ends, before ovulation
-      if (dayDate > lastPeriodEnd && dayDate < estimatedOvulation) {
-        const follicularStart = new Date(lastPeriodEnd);
-        follicularStart.setDate(follicularStart.getDate() + 1);
-        follicularStart.setHours(0, 0, 0, 0);
-        const follicularEnd = new Date(estimatedOvulation);
-        follicularEnd.setDate(follicularEnd.getDate() - 1);
-        follicularEnd.setHours(23, 59, 59, 999);
-        return {
-          phase: 'follicular',
-          isPredicted: true,
-          phaseStart: follicularStart,
-          phaseEnd: follicularEnd,
-        };
-      }
-
-      // Ovulation day (estimated)
-      if (dayDate.getTime() === estimatedOvulation.getTime()) {
-        return {
-          phase: 'ovulation',
-          isPredicted: true,
-          phaseStart: estimatedOvulation,
-          phaseEnd: estimatedOvulation,
-        };
-      }
-
-      // Luteal phase: after ovulation, before next period
-      if (dayDate > estimatedOvulation && dayDate < nextPeriodStart) {
-        const lutealStart = new Date(estimatedOvulation);
-        lutealStart.setDate(lutealStart.getDate() + 1);
-        lutealStart.setHours(0, 0, 0, 0);
-        const lutealEnd = new Date(nextPeriodStart);
-        lutealEnd.setDate(lutealEnd.getDate() - 1);
-        lutealEnd.setHours(23, 59, 59, 999);
-        return {
-          phase: 'luteal',
-          isPredicted: true,
-          phaseStart: lutealStart,
-          phaseEnd: lutealEnd,
-        };
-      }
-    }
-
-    // Default fallback for current month - ensure all dates get a phase
-    // If we have period data, assign phases based on cycle position
-    if (lastPeriodEnd) {
-      // If date is after last period end, it should be in follicular, ovulation, or luteal
-      if (dayDate > lastPeriodEnd) {
-        // Try to estimate based on cycle length
-        const cycleLength = settings?.averageCycleLength || 28;
-        const daysSincePeriodEnd = Math.floor((dayDate.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24));
-        
-        // Estimate ovulation around day 14 of cycle (from period start)
-        const estimatedOvulationDay = 14;
-        const periodLength = settings?.averagePeriodLength || 5;
-        const daysFromPeriodStart = daysSincePeriodEnd + periodLength;
-        
-        if (daysFromPeriodStart < estimatedOvulationDay - 5) {
-          // Follicular phase (before fertile window)
-          return {
-            phase: 'follicular',
-            isPredicted: true,
-            phaseStart: new Date(lastPeriodEnd.getTime() + 24 * 60 * 60 * 1000),
-            phaseEnd: nextPeriodStart || null,
-          };
-        } else if (daysFromPeriodStart >= estimatedOvulationDay - 5 && daysFromPeriodStart <= estimatedOvulationDay) {
-          // Ovulation/fertile window
-          return {
-            phase: 'ovulation',
-            isPredicted: true,
-            phaseStart: new Date(lastPeriodEnd.getTime() + (estimatedOvulationDay - periodLength - 5) * 24 * 60 * 60 * 1000),
-            phaseEnd: new Date(lastPeriodEnd.getTime() + (estimatedOvulationDay - periodLength) * 24 * 60 * 60 * 1000),
-          };
-        } else {
-          // Luteal phase (after ovulation)
-          return {
-            phase: 'luteal',
-            isPredicted: true,
-            phaseStart: new Date(lastPeriodEnd.getTime() + (estimatedOvulationDay - periodLength + 1) * 24 * 60 * 60 * 1000),
-            phaseEnd: nextPeriodStart || null,
-          };
-        }
-      } else if (dayDate <= lastPeriodEnd) {
-        // Date is during or right after period - should be menstrual (already handled above)
-        // But if we reach here, it means it's not a logged period, so return null
-        return null;
-      }
-    }
-    
-    // If we have next period but no last period end, estimate from next period
-    if (nextPeriodStart && !lastPeriodEnd) {
-      const estimatedOvulation = new Date(nextPeriodStart);
-      estimatedOvulation.setDate(estimatedOvulation.getDate() - 14);
-      estimatedOvulation.setHours(0, 0, 0, 0);
-      
-      if (dayDate < estimatedOvulation) {
-        return {
-          phase: 'follicular',
-          isPredicted: true,
-          phaseStart: null,
-          phaseEnd: estimatedOvulation,
-        };
-      } else if (dayDate.getTime() === estimatedOvulation.getTime()) {
-        return {
-          phase: 'ovulation',
-          isPredicted: true,
-          phaseStart: estimatedOvulation,
-          phaseEnd: estimatedOvulation,
-        };
-      } else if (dayDate < nextPeriodStart) {
-        return {
-          phase: 'luteal',
-          isPredicted: true,
-          phaseStart: new Date(estimatedOvulation.getTime() + 24 * 60 * 60 * 1000),
-          phaseEnd: nextPeriodStart,
-        };
-      }
+    if (dayDate > fertileEnd && dayDate < nextPeriod.startDate) {
+      const lutealStart = new Date(fertileEnd);
+      lutealStart.setDate(lutealStart.getDate() + 1);
+      lutealStart.setHours(0, 0, 0, 0);
+      const lutealEnd = new Date(nextPeriod.startDate);
+      lutealEnd.setDate(lutealEnd.getDate() - 1);
+      lutealEnd.setHours(23, 59, 59, 999);
+      return {
+        phase: 'luteal',
+        isPredicted: true,
+        phaseStart: lutealStart,
+        phaseEnd: lutealEnd,
+      };
     }
   }
 
-  // If no period data at all, return null
+  // Fallback if we couldn't determine a phase
   return null;
 }
 
