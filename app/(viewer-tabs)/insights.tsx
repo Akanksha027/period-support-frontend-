@@ -23,7 +23,7 @@ import {
   getSymptoms,
   getMoods,
   getReminderStatus,
-  generateReminder,
+
   createPeriod,
   Period,
   UserSettings,
@@ -79,7 +79,7 @@ export default function ViewerInsightsScreen() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [lastReminder, setLastReminder] = useState<Reminder | null>(null);
   const [reminderEnabled, setReminderEnabled] = useState<boolean>(false);
-  const [generatingReminder, setGeneratingReminder] = useState<boolean>(false);
+
   const loadingRef = useRef(false);
   const videoRef = useRef<Video | null>(null);
   const [videoVisible, setVideoVisible] = useState(false);
@@ -375,29 +375,7 @@ export default function ViewerInsightsScreen() {
     }, [user?.id, isSignedIn, loadData])
   );
 
-  const handleGenerateReminder = useCallback(async () => {
-    if (!settings?.reminderEnabled) {
-      Alert.alert('Reminders Disabled', 'Reminders are disabled for this account.');
-      return;
-    }
 
-    setGeneratingReminder(true);
-    try {
-      const response = await generateReminder();
-      if (response.success && response.reminder) {
-        setLastReminder(response.reminder);
-        showToast('Reminder has been generated!', 'success');
-      } else {
-        const errorMessage = response.message || 'Could not generate a reminder at this time. Please try again later.';
-        Alert.alert('Unable to Generate', errorMessage);
-      }
-    } catch (error: any) {
-      console.error('Error generating reminder:', error);
-      Alert.alert('Error', error.message || 'Failed to generate reminder. Please try again.');
-    } finally {
-      setGeneratingReminder(false);
-    }
-  }, [settings?.reminderEnabled]);
 
   // Memoize tick marks
   const tickMarks = useMemo(() => {
@@ -779,20 +757,7 @@ export default function ViewerInsightsScreen() {
                 <Ionicons name="notifications" size={24} color={Colors.primary} />
                 <Text style={styles.remindersTitle}>Reminders</Text>
               </View>
-              <TouchableOpacity
-                style={[styles.generateReminderButton, generatingReminder && styles.generateReminderButtonDisabled]}
-                onPress={handleGenerateReminder}
-                disabled={generatingReminder}
-              >
-                {generatingReminder ? (
-                  <PeriLoader size={28} />
-                ) : (
-                  <>
-                    <Ionicons name="refresh" size={16} color={Colors.white} />
-                    <Text style={styles.generateReminderButtonText}>Generate</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+
             </View>
 
             {lastReminder ? (
@@ -816,7 +781,7 @@ export default function ViewerInsightsScreen() {
               <View style={styles.reminderCardEmpty}>
                 <Ionicons name="notifications-outline" size={32} color={Colors.textSecondary} />
                 <Text style={styles.reminderEmptyText}>
-                  No reminder yet. Tap "Generate" to get a personalized reminder based on the cycle!
+                  The personalized daily reminder will be generated automatically at 1 AM!
                 </Text>
               </View>
             )}
