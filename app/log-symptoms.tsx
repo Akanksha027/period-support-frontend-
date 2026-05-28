@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -281,7 +282,7 @@ export default function LogSymptomsScreen() {
               disabled={saving}
             >
               {saving ? (
-                <PeriLoader size={32} />
+                <ActivityIndicator color={Colors.white} size="small" />
               ) : (
                 <Text style={styles.saveButtonText}>Save</Text>
               )}

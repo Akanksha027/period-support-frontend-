@@ -11,6 +11,7 @@ import {
   Dimensions,
   DeviceEventEmitter,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -131,6 +132,8 @@ export default function CalendarScreen() {
   const [newPeriodDate, setNewPeriodDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoggingPeriod, setIsLoggingPeriod] = useState(false);
+  const [isDeletingPeriod, setIsDeletingPeriod] = useState(false);
 
   const todaysLabel = useMemo(() => {
     return new Date().toLocaleDateString('en-US', {
@@ -381,6 +384,7 @@ export default function CalendarScreen() {
 
   const handleAddPeriod = useCallback(async (selectedDate?: Date) => {
     if (!user) return;
+    setIsLoggingPeriod(true);
 
     try {
       const date = selectedDate || new Date(newPeriodDate);
@@ -435,6 +439,8 @@ export default function CalendarScreen() {
       DeviceEventEmitter.emit('periodsUpdated');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to log period');
+    } finally {
+      setIsLoggingPeriod(false);
     }
   }, [user, newPeriodDate, settings, periods, loadData]);
 
@@ -446,6 +452,7 @@ export default function CalendarScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            setIsDeletingPeriod(true);
             try {
               if (periodId === 'settings-fallback') {
                 await updateSettings({ lastPeriodDate: null });
@@ -461,6 +468,8 @@ export default function CalendarScreen() {
               loadData();
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to delete period');
+            } finally {
+              setIsDeletingPeriod(false);
             }
           },
         },
@@ -791,25 +800,39 @@ export default function CalendarScreen() {
                 <View style={styles.primaryActionsRow}>
                   {isFirstDayOfPeriod && selectedDatePeriod && (
                     <TouchableOpacity
-                      style={[styles.actionButton, styles.deleteButton]}
+                      style={[styles.actionButton, styles.deleteButton, isDeletingPeriod && { opacity: 0.7 }]}
                       onPress={() => {
                         handleDeletePeriod(selectedDatePeriod.id);
                       }}
+                      disabled={isDeletingPeriod}
                     >
-                      <Ionicons name="trash-outline" size={20} color={Colors.white} />
-                      <Text style={styles.deleteButtonText}>Delete</Text>
+                      {isDeletingPeriod ? (
+                        <ActivityIndicator color={Colors.white} size="small" />
+                      ) : (
+                        <>
+                          <Ionicons name="trash-outline" size={20} color={Colors.white} />
+                          <Text style={styles.deleteButtonText}>Delete</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   )}
                   {canLogPeriod && (
                     <TouchableOpacity
-                      style={[styles.actionButton, styles.logPeriodButton]}
+                      style={[styles.actionButton, styles.logPeriodButton, isLoggingPeriod && { opacity: 0.7 }]}
                       onPress={() => {
                         setNewPeriodDate(selectedDate!);
                         handleAddPeriod(selectedDate!);
                       }}
+                      disabled={isLoggingPeriod}
                     >
-                      <Ionicons name="add-circle-outline" size={20} color={Colors.white} />
-                      <Text style={styles.logPeriodButtonText}>Log Period</Text>
+                      {isLoggingPeriod ? (
+                        <ActivityIndicator color={Colors.white} size="small" />
+                      ) : (
+                        <>
+                          <Ionicons name="add-circle-outline" size={20} color={Colors.white} />
+                          <Text style={styles.logPeriodButtonText}>Log Period</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   )}
                 </View>

@@ -12,6 +12,7 @@ import {
   RefreshControl,
   Platform,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -93,6 +94,7 @@ export default function HomeScreen() {
   const [lastReminder, setLastReminder] = useState<Reminder | null>(null);
   const [reminderEnabled, setReminderEnabled] = useState<boolean>(false);
   const [generatingReminder, setGeneratingReminder] = useState<boolean>(false);
+  const [isLoggingPeriod, setIsLoggingPeriod] = useState<boolean>(false);
   const loadingRef = useRef(false);
   const videoRef = useRef<Video | null>(null);
   const [videoVisible, setVideoVisible] = useState(false);
@@ -492,6 +494,7 @@ export default function HomeScreen() {
 
   const handleLogPeriod = useCallback(async () => {
     if (!user) return;
+    setIsLoggingPeriod(true);
 
     try {
       const today = new Date();
@@ -534,6 +537,8 @@ export default function HomeScreen() {
       DeviceEventEmitter.emit('periodsUpdated');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to log period');
+    } finally {
+      setIsLoggingPeriod(false);
     }
   }, [user, loadData, periods, settings?.averagePeriodLength]);
 
@@ -882,11 +887,16 @@ export default function HomeScreen() {
 
             {/* Log Period Button - inside circle */}
             <TouchableOpacity
-              style={styles.logPeriodButtonInside}
+              style={[styles.logPeriodButtonInside, isLoggingPeriod && { opacity: 0.7 }]}
               onPress={handleLogPeriod}
               activeOpacity={0.7}
+              disabled={isLoggingPeriod}
             >
-              <Text style={styles.logPeriodButtonTextInside}>Log Period</Text>
+              {isLoggingPeriod ? (
+                <ActivityIndicator color={Colors.primary} size="small" />
+              ) : (
+                <Text style={styles.logPeriodButtonTextInside}>Log Period</Text>
+              )}
             </TouchableOpacity>
 
             {/* Mascot (Giraffe) in bottom-right */}
