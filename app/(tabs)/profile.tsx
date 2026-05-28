@@ -48,13 +48,30 @@ export default function Profile() {
     setLoading(true);
 
     try {
-      const data = await getSettings();
+      // 1. FAST CACHE LOAD
+      const cachedData = await getSettings();
+      if (cachedData) {
+        setSettings(cachedData);
+        setCycleLength(String(cachedData.averageCycleLength || 28));
+        setPeriodLength(String(cachedData.averagePeriodLength || 5));
+        setLastPeriodDate(cachedData.lastPeriodDate ? new Date(cachedData.lastPeriodDate) : null);
+      }
+      
+      // Hide spinner immediately (whether we had cache or not, though usually we do)
+      if (cachedData) {
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      // 2. BACKGROUND REVALIDATE (Network Fetch)
+      const data = await getSettings(true);
       if (data) {
         setSettings(data);
         setCycleLength(String(data.averageCycleLength || 28));
         setPeriodLength(String(data.averagePeriodLength || 5));
         setLastPeriodDate(data.lastPeriodDate ? new Date(data.lastPeriodDate) : null);
-      } else {
+      } else if (!cachedData) {
         setSettings(null);
         setCycleLength('28');
         setPeriodLength('5');

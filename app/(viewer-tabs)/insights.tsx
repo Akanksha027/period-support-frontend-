@@ -281,83 +281,73 @@ export default function ViewerInsightsScreen() {
       const periodsCacheKey = buildCacheKey(['viewer-periods', cacheScope]);
       const settingsCacheKey = buildCacheKey(['viewer-settings', cacheScope]);
 
-      const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
-      if (cachedPeriods !== undefined) {
-        setPeriods(cachedPeriods);
-        showSpinner = false;
-      }
-
-      const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
-      if (cachedSettings !== undefined) {
-        setSettings(cachedSettings);
-        showSpinner = false;
-      }
+      // We'll fetch cache items together below
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const endOfDay = new Date(today);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const symptomsCacheKey = buildCacheKey([
-        'viewer-symptoms',
-        cacheScope,
-        today.toISOString(),
-        endOfDay.toISOString(),
-      ]);
-      const moodsCacheKey = buildCacheKey([
-        'viewer-moods',
-        cacheScope,
-        today.toISOString(),
-        endOfDay.toISOString(),
-      ]);
+      const symptomsCacheKey = buildCacheKey(['viewer-symptoms', cacheScope, today.toISOString(), endOfDay.toISOString()]);
+      const moodsCacheKey = buildCacheKey(['viewer-moods', cacheScope, today.toISOString(), endOfDay.toISOString()]);
       const remindersCacheKey = buildCacheKey(['viewer-reminders', cacheScope]);
 
-      const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
-      if (cachedSymptoms !== undefined) {
-        setTodaySymptoms(cachedSymptoms);
-        showSpinner = false;
-      }
+      // 1. FAST CACHE LOAD (Parallel)
+      const [
+        cachedPeriods,
+        cachedSettings,
+        cachedSymptoms,
+        cachedMoods,
+        cachedReminderStatus
+      ] = await Promise.all([
+        getCachedData<Period[]>(periodsCacheKey),
+        getCachedData<UserSettings | null>(settingsCacheKey),
+        getCachedData<Symptom[]>(symptomsCacheKey),
+        getCachedData<Mood[]>(moodsCacheKey),
+        getCachedData<{ enabled: boolean; lastReminder: Reminder | null }>(remindersCacheKey)
+      ]);
 
-      const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
-      if (cachedMoods !== undefined) {
-        setTodayMoods(cachedMoods);
-        showSpinner = false;
-      }
-
-      const cachedReminderStatus = await getCachedData<{ enabled: boolean; lastReminder: Reminder | null }>(remindersCacheKey);
+      if (cachedPeriods !== undefined) setPeriods(cachedPeriods);
+      if (cachedSettings !== undefined) setSettings(cachedSettings);
+      if (cachedSymptoms !== undefined) setTodaySymptoms(cachedSymptoms);
+      if (cachedMoods !== undefined) setTodayMoods(cachedMoods);
       if (cachedReminderStatus !== undefined) {
         setReminderEnabled(cachedReminderStatus.enabled);
         setLastReminder(cachedReminderStatus.lastReminder);
-        showSpinner = false;
       }
 
-      setLoading(showSpinner);
+      // If we got *any* critical data from cache, hide spinner immediately
+      if (cachedPeriods !== undefined || cachedSettings !== undefined) {
+        showSpinner = false;
+        setLoading(false);
+      } else {
+        setLoading(showSpinner);
+      }
 
-      const [periodsData, settingsData] = await Promise.all([
-        getPeriods().catch(() => []),
-        getSettings().catch(() => null),
+      // 2. BACKGROUND REVALIDATE (Network Fetch)
+      // Pass forceRefresh = true to hit network instead of reading from cache again
+      const [
+        periodsData, 
+        settingsData, 
+        symptoms, 
+        moods, 
+        reminderStatus
+      ] = await Promise.all([
+        getPeriods(true).catch(() => cachedPeriods || []),
+        getSettings(true).catch(() => cachedSettings || null),
+        getSymptoms(today.toISOString(), endOfDay.toISOString(), true).catch(() => cachedSymptoms || []),
+        getMoods(today.toISOString(), endOfDay.toISOString(), true).catch(() => cachedMoods || []),
+        getReminderStatus(true).catch(() => cachedReminderStatus || { enabled: false, lastReminder: null }),
       ]);
 
+      // 3. SILENT STATE UPDATE
       const effectivePeriods = buildEffectivePeriods(periodsData, settingsData);
       setPeriods(effectivePeriods);
       setSettings(settingsData);
-
-      await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
-      await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
-
-      const [symptoms, moods, reminderStatus] = await Promise.all([
-        getSymptoms(today.toISOString(), endOfDay.toISOString()).catch(() => []),
-        getMoods(today.toISOString(), endOfDay.toISOString()).catch(() => []),
-        getReminderStatus().catch(() => ({ enabled: false, lastReminder: null })),
-      ]);
       setTodaySymptoms(symptoms);
       setTodayMoods(moods);
       setReminderEnabled(reminderStatus.enabled);
       setLastReminder(reminderStatus.lastReminder);
-
-      await setCachedData(symptomsCacheKey, symptoms, CacheTTL.SHORT);
-      await setCachedData(moodsCacheKey, moods, CacheTTL.SHORT);
-      await setCachedData(remindersCacheKey, reminderStatus, CacheTTL.MEDIUM);
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Viewer Insights] Error loading data:', error);

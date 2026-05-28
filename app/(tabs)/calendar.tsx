@@ -195,28 +195,45 @@ export default function CalendarScreen() {
         scopeIdentifier ?? 'self',
       ]);
 
+      // We will fetch cache in parallel
       const periodsCacheKey = buildCacheKey(['periods', cacheScope]);
       const settingsCacheKey = buildCacheKey(['settings', cacheScope]);
+      const symptomsCacheKey = buildCacheKey(['symptoms', cacheScope]);
+      const moodsCacheKey = buildCacheKey(['moods', cacheScope]);
 
-      const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
-      if (cachedPeriods !== undefined) {
-        setPeriods(cachedPeriods);
+      // 1. FAST CACHE LOAD (Parallel)
+      const [
+        cachedPeriods,
+        cachedSettings,
+        cachedSymptoms,
+        cachedMoods
+      ] = await Promise.all([
+        getCachedData<Period[]>(periodsCacheKey),
+        getCachedData<UserSettings | null>(settingsCacheKey),
+        getCachedData<Symptom[]>(symptomsCacheKey),
+        getCachedData<Mood[]>(moodsCacheKey),
+      ]);
+
+      if (cachedPeriods !== undefined) setPeriods(cachedPeriods);
+      if (cachedSettings !== undefined) setSettings(cachedSettings);
+      if (cachedSymptoms !== undefined) setAllSymptoms(cachedSymptoms);
+      if (cachedMoods !== undefined) setAllMoods(cachedMoods);
+
+      // If we got *any* critical data from cache, hide spinner immediately
+      if (cachedPeriods !== undefined || cachedSettings !== undefined) {
         showSpinner = false;
+        setLoading(false);
+      } else {
+        setLoading(showSpinner);
       }
 
-      const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
-      if (cachedSettings !== undefined) {
-        setSettings(cachedSettings);
-        showSpinner = false;
-      }
-
-      setLoading(showSpinner);
-
+      // 2. BACKGROUND REVALIDATE (Network Fetch)
+      // Pass forceRefresh = true to hit network instead of reading from cache again
       const [periodsData, settingsData, symptomsData, moodsData] = await Promise.all([
-        getPeriods().catch((e) => { console.error('periods fetch error', e); return null; }),
-        getSettings().catch((e) => { console.error('settings fetch error', e); return null; }),
-        getSymptoms().catch((e) => { console.error('symptoms fetch error', e); return null; }),
-        getMoods().catch((e) => { console.error('moods fetch error', e); return null; }),
+        getPeriods(true).catch((e) => { console.error('periods fetch error', e); return null; }),
+        getSettings(true).catch((e) => { console.error('settings fetch error', e); return null; }),
+        getSymptoms(undefined, undefined, true).catch((e) => { console.error('symptoms fetch error', e); return null; }),
+        getMoods(undefined, undefined, true).catch((e) => { console.error('moods fetch error', e); return null; }),
       ]);
       
       // Only update state if the fetch was successful (not null)
@@ -235,10 +252,12 @@ export default function CalendarScreen() {
       
       if (symptomsData !== null) {
         setAllSymptoms(symptomsData);
+        await setCachedData(symptomsCacheKey, symptomsData, CacheTTL.SHORT);
       }
       
       if (moodsData !== null) {
         setAllMoods(moodsData);
+        await setCachedData(moodsCacheKey, moodsData, CacheTTL.SHORT);
       }
     } catch (error: any) {
       if (error.response?.status !== 401) {

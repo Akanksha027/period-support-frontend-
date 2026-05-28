@@ -173,10 +173,24 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
       const userInfoCacheKey = buildCacheKey(['viewer-user-info', cacheScope]);
       const periodsCacheKey = buildCacheKey(['viewer-periods', cacheScope]);
       const settingsCacheKey = buildCacheKey(['viewer-settings', cacheScope]);
+      const symptomsCacheKey = buildCacheKey(['viewer-symptoms', cacheScope]);
+      const moodsCacheKey = buildCacheKey(['viewer-moods', cacheScope]);
 
-    let hasCachedSnapshot = false;
+      // 1. FAST CACHE LOAD (Parallel)
+      const [
+        cachedUserInfo,
+        cachedPeriods,
+        cachedSettings,
+        cachedSymptoms,
+        cachedMoods
+      ] = await Promise.all([
+        getCachedData<UserInfo | null>(userInfoCacheKey),
+        getCachedData<Period[]>(periodsCacheKey),
+        getCachedData<UserSettings | null>(settingsCacheKey),
+        getCachedData<Symptom[]>(symptomsCacheKey),
+        getCachedData<Mood[]>(moodsCacheKey)
+      ]);
 
-      const cachedUserInfo = await getCachedData<UserInfo | null>(userInfoCacheKey);
       if (cachedUserInfo !== undefined) {
         setUserInfo(cachedUserInfo);
         if (cachedUserInfo?.userType === 'OTHER' && cachedUserInfo.viewedUser) {
@@ -185,33 +199,32 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
             'User';
           setViewedUserName(name);
         }
-      hasCachedSnapshot = true;
       }
 
-      const cachedPeriods = await getCachedData<Period[]>(periodsCacheKey);
-      if (cachedPeriods !== undefined) {
-        setPeriods(cachedPeriods);
-      hasCachedSnapshot = true;
+      if (cachedPeriods !== undefined) setPeriods(cachedPeriods);
+      if (cachedSettings !== undefined) setSettings(cachedSettings);
+      if (cachedSymptoms !== undefined) setAllSymptoms(cachedSymptoms);
+      if (cachedMoods !== undefined) setAllMoods(cachedMoods);
+
+      // Hide spinner immediately if we got data
+      if (cachedPeriods !== undefined || cachedSettings !== undefined) {
+        setLoading(false);
+      } else if (!skipSpinner) {
+        setLoading(true);
       }
 
-      const cachedSettings = await getCachedData<UserSettings | null>(settingsCacheKey);
-      if (cachedSettings !== undefined) {
-        setSettings(cachedSettings);
-      hasCachedSnapshot = true;
-    }
+      // 2. BACKGROUND REVALIDATE (Network Fetch)
+      const [info, periodsData, settingsData, symptomsData, moodsData] = await Promise.all([
+        getUserInfo(true).catch(() => cachedUserInfo || null),
+        getPeriods(true).catch((e) => { console.error('periods fetch error', e); return null; }),
+        getSettings(true).catch((e) => { console.error('settings fetch error', e); return null; }),
+        getSymptoms(undefined, undefined, true).catch((e) => { console.error('symptoms fetch error', e); return null; }),
+        getMoods(undefined, undefined, true).catch((e) => { console.error('moods fetch error', e); return null; }),
+      ]);
 
-    if (hasCachedSnapshot) {
-      setLoading(false);
-    } else if (!skipSpinner) {
-      setLoading(true);
-      }
-
-      // Get user info to check if viewing someone else
-      const info = await getUserInfo();
+      // 3. SILENT STATE UPDATE
       if (info) {
         setUserInfo(info);
-        await setCachedData(userInfoCacheKey, info, CacheTTL.LONG);
-        // Get viewed user's name
         if (info.userType === 'OTHER' && info.viewedUser) {
           const name = info.viewedUser.name ||
                       info.viewedUser.email?.split('@')[0] ||
@@ -225,23 +238,14 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
         }
       }
 
-      const [periodsData, settingsData, symptomsData, moodsData] = await Promise.all([
-        getPeriods().catch((e) => { console.error('periods fetch error', e); return null; }),
-        getSettings().catch((e) => { console.error('settings fetch error', e); return null; }),
-        getSymptoms().catch((e) => { console.error('symptoms fetch error', e); return null; }),
-        getMoods().catch((e) => { console.error('moods fetch error', e); return null; }),
-      ]);
-      
       if (settingsData !== null) {
         setSettings(settingsData);
-        await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
       }
       
       if (periodsData !== null) {
         const effectiveSettings = settingsData !== null ? settingsData : (cachedSettings || null);
         const effectivePeriods = buildEffectivePeriods(periodsData, effectiveSettings);
         setPeriods(effectivePeriods);
-        await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
       }
       
       if (symptomsData !== null) {
