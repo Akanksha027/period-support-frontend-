@@ -51,7 +51,7 @@ function getPhaseInfoForDate(
 
   // Get phase details using the main function
   const phaseDetails = getPhaseDetailsForDate(date, periods, predictions, settings);
-  
+
   // If no phase details (null), return null
   if (!phaseDetails) {
     return null;
@@ -149,18 +149,18 @@ export default function ViewerCalendarScreen() {
     return calculatePredictions(periods, settings);
   }, [periods, settings]);
 
-const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boolean } = {}) => {
-  if (loadingDataRef.current) {
-    return;
-  }
+  const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boolean } = {}) => {
+    if (loadingDataRef.current) {
+      return;
+    }
 
-  if (!userRef.current || !isSignedInRef.current) {
-    setLoading(false);
-    return;
-  }
+    if (!userRef.current || !isSignedInRef.current) {
+      setLoading(false);
+      return;
+    }
 
-  loadingDataRef.current = true;
-  try {
+    loadingDataRef.current = true;
+    try {
       const viewModeRecord = getCurrentViewModeRecord();
       const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
         ? viewModeRecord?.viewedUserId ?? userRef.current?.id
@@ -227,13 +227,13 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
         setUserInfo(info);
         if (info.userType === 'OTHER' && info.viewedUser) {
           const name = info.viewedUser.name ||
-                      info.viewedUser.email?.split('@')[0] ||
-                      'User';
+            info.viewedUser.email?.split('@')[0] ||
+            'User';
           setViewedUserName(name);
         } else {
           const name = userRef.current?.firstName ||
-                      userRef.current?.emailAddresses[0]?.emailAddress?.split('@')[0] ||
-                      'User';
+            userRef.current?.emailAddresses[0]?.emailAddress?.split('@')[0] ||
+            'User';
           setViewedUserName(name);
         }
       }
@@ -241,17 +241,17 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
       if (settingsData !== null) {
         setSettings(settingsData);
       }
-      
+
       if (periodsData !== null) {
         const effectiveSettings = settingsData !== null ? settingsData : (cachedSettings || null);
         const effectivePeriods = buildEffectivePeriods(periodsData, effectiveSettings);
         setPeriods(effectivePeriods);
       }
-      
+
       if (symptomsData !== null) {
         setAllSymptoms(symptomsData);
       }
-      
+
       if (moodsData !== null) {
         setAllMoods(moodsData);
       }
@@ -263,7 +263,7 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
       setLoading(false);
       loadingDataRef.current = false;
     }
-}, []);
+  }, []);
 
   // Load moods & symptoms for selected date synchronously from all pre-fetched logs
   const loadLogsForDate = useCallback((date: Date) => {
@@ -305,7 +305,7 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
         loadingDataRef.current = false;
         loadData({ skipSpinner: true });
       }
-  }, [user?.id, isSignedIn, loadData])
+    }, [user?.id, isSignedIn, loadData])
   );
 
   const onRefresh = useCallback(async () => {
@@ -378,12 +378,12 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
       const allowPredicted = !isBeforeCurrentMonth && !isBeyondSixMonths;
 
       const detail = getPhaseDetailsForDate(normalizedDate, periods, predictions, settings);
-      
+
       // If no phase details (null), return no phase
       if (!detail) {
         return { phase: null, color: null, isPredicted: false };
       }
-      
+
       const meta = PHASE_PALETTE[detail.phase];
       return { phase: detail.phase, color: meta.color, isPredicted: detail.isPredicted };
     },
@@ -618,38 +618,38 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
 
                   {/* Moods and Symptoms rendered instantly */}
                   <>
-                      <View style={styles.symptomsSection}>
-                        <Text style={styles.sectionTitle}>Moods</Text>
-                        {selectedDateMoods.length === 0 ? (
-                          <Text style={styles.emptyText}>No moods logged for this date</Text>
-                        ) : (
-                          <View style={styles.symptomsList}>
-                            {selectedDateMoods.map((mood) => (
-                              <View key={mood.id} style={styles.symptomItem}>
-                                <Text style={styles.symptomText}>{mood.type}</Text>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-                      </View>
+                    <View style={styles.symptomsSection}>
+                      <Text style={styles.sectionTitle}>Moods</Text>
+                      {selectedDateMoods.length === 0 ? (
+                        <Text style={styles.emptyText}>No moods logged for this date</Text>
+                      ) : (
+                        <View style={styles.symptomsList}>
+                          {selectedDateMoods.map((mood) => (
+                            <View key={mood.id} style={styles.symptomItem}>
+                              <Text style={styles.symptomText}>{mood.type}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
 
-                      <View style={styles.symptomsSection}>
-                        <Text style={styles.sectionTitle}>Symptoms</Text>
-                        {selectedDateSymptoms.length === 0 ? (
-                          <Text style={styles.emptyText}>No symptoms logged for this date</Text>
-                        ) : (
-                          <View style={styles.symptomsList}>
-                            {selectedDateSymptoms.map((symptom) => (
-                              <View key={symptom.id} style={styles.symptomItem}>
-                                <Text style={styles.symptomText}>
-                                  {symptom.type} {symptom.severity && `(Severity: ${symptom.severity})`}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-                      </View>
-                    </>
+                    <View style={styles.symptomsSection}>
+                      <Text style={styles.sectionTitle}>Symptoms</Text>
+                      {selectedDateSymptoms.length === 0 ? (
+                        <Text style={styles.emptyText}>No symptoms logged for this date</Text>
+                      ) : (
+                        <View style={styles.symptomsList}>
+                          {selectedDateSymptoms.map((symptom) => (
+                            <View key={symptom.id} style={styles.symptomItem}>
+                              <Text style={styles.symptomText}>
+                                {symptom.type} {symptom.severity && `(Severity: ${symptom.severity})`}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  </>
                 </>
               )}
             </ScrollView>

@@ -50,7 +50,7 @@ function buildMetaText(phase: PhaseKey, predictions: CyclePredictions): string {
 
 export const PhaseGuide: React.FC<PhaseGuideProps> = ({ predictions, currentPhase, style }) => {
   return (
-    <View style={[styles.container, style]}> 
+    <View style={[styles.container, style]}>
       <Text style={styles.heading}>Monthly Cycle Phases</Text>
       {phaseOrder.map((phaseKey) => {
         const palette = PHASE_PALETTE[phaseKey];

@@ -132,7 +132,7 @@ export default function Profile() {
 
     setIsUpdating(true);
     try {
-      const updated = await updateSettings({ 
+      const updated = await updateSettings({
         averagePeriodLength: value,
         periodDuration: value, // Also update periodDuration for consistency
       });
@@ -154,10 +154,10 @@ export default function Profile() {
   const handleUpdateLastPeriodDate = useCallback(async (event: any, date?: Date) => {
     setShowDatePicker(false);
     if (!date) return;
-    
+
     setLastPeriodDate(date);
     setIsUpdating(true);
-    
+
     try {
       const updated = await updateSettings({ lastPeriodDate: date.toISOString() });
       if (updated) {
@@ -269,17 +269,17 @@ export default function Profile() {
               <Text style={styles.settingLabel}>Last Period Date</Text>
               <Text style={styles.settingHint}>Start of your last period</Text>
             </View>
-            <TouchableOpacity 
-              style={[styles.inputContainer, styles.dateInputContainer]} 
+            <TouchableOpacity
+              style={[styles.inputContainer, styles.dateInputContainer]}
               onPress={() => setShowDatePicker(true)}
               disabled={isUpdating || loading}
             >
               <Text style={[
-                styles.settingInput, 
+                styles.settingInput,
                 !lastPeriodDate && { color: Colors.textSecondary, fontWeight: '400', fontSize: 14 }
               ]}>
-                {lastPeriodDate 
-                  ? lastPeriodDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
+                {lastPeriodDate
+                  ? lastPeriodDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                   : 'No date logged'}
               </Text>
               <Ionicons name="calendar-outline" size={16} color={Colors.primary} style={{ marginLeft: 8 }} />

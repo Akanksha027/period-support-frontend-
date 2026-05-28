@@ -235,13 +235,13 @@ export default function CalendarScreen() {
         getSymptoms(undefined, undefined, true).catch((e) => { console.error('symptoms fetch error', e); return null; }),
         getMoods(undefined, undefined, true).catch((e) => { console.error('moods fetch error', e); return null; }),
       ]);
-      
+
       // Only update state if the fetch was successful (not null)
       if (settingsData !== null) {
         setSettings(settingsData);
         await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
       }
-      
+
       if (periodsData !== null) {
         // Use either the freshly fetched settings or fallback to cached settings
         const effectiveSettings = settingsData !== null ? settingsData : (cachedSettings || null);
@@ -249,12 +249,12 @@ export default function CalendarScreen() {
         setPeriods(effectivePeriods);
         await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
       }
-      
+
       if (symptomsData !== null) {
         setAllSymptoms(symptomsData);
         await setCachedData(symptomsCacheKey, symptomsData, CacheTTL.SHORT);
       }
-      
+
       if (moodsData !== null) {
         setAllMoods(moodsData);
         await setCachedData(moodsCacheKey, moodsData, CacheTTL.SHORT);
@@ -272,7 +272,7 @@ export default function CalendarScreen() {
   // Load moods & symptoms for selected date synchronously from all pre-fetched logs
   const loadLogsForDate = useCallback((date: Date) => {
     if (!user) return;
-    
+
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
@@ -639,10 +639,10 @@ export default function CalendarScreen() {
               const borderPredictedAlpha = status.phase === 'follicular' ? '66' : '40';
 
               const isPredictedMenstrual = status.phase === 'menstrual' && status.isPredicted;
-              
+
               // Use a distinct pink color for predicted periods
               const baseColor = isPredictedMenstrual ? '#FFB6C1' : status.color;
-              
+
               // For predicted menstrual, we want it to be clearly visible so use higher opacity
               const finalAlpha = isPredictedMenstrual ? '55' : (status.isPredicted ? predictedAlpha : actualAlpha);
               const finalBorderAlpha = isPredictedMenstrual ? 'CC' : (status.isPredicted ? borderPredictedAlpha : borderActualAlpha);
@@ -787,32 +787,32 @@ export default function CalendarScreen() {
 
               {/* Moods and Symptoms rendered instantly */}
               <View style={styles.moodsContainer}>
-                    <Text style={styles.moodsTitle}>Moods</Text>
-                    {selectedDateMoods.length > 0 ? (
-                      selectedDateMoods.map((mood) => (
-                        <View key={mood.id} style={styles.symptomItem}>
-                          <Text style={styles.symptomText}>{mood.type}</Text>
-                        </View>
-                      ))
-                    ) : (
-                      <Text style={styles.noSymptomsText}>No moods logged for this date</Text>
-                    )}
-                  </View>
+                <Text style={styles.moodsTitle}>Moods</Text>
+                {selectedDateMoods.length > 0 ? (
+                  selectedDateMoods.map((mood) => (
+                    <View key={mood.id} style={styles.symptomItem}>
+                      <Text style={styles.symptomText}>{mood.type}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.noSymptomsText}>No moods logged for this date</Text>
+                )}
+              </View>
 
-                  <View style={styles.symptomsContainer}>
-                    <Text style={styles.symptomsTitle}>Symptoms</Text>
-                    {selectedDateSymptoms.length > 0 ? (
-                      selectedDateSymptoms.map((symptom) => (
-                        <View key={symptom.id} style={styles.symptomItem}>
-                          <Text style={styles.symptomText}>
-                            {symptom.type} {symptom.severity ? `(Severity: ${symptom.severity}/5)` : ''}
-                          </Text>
-                        </View>
-                      ))
-                    ) : (
-                      <Text style={styles.noSymptomsText}>No symptoms logged for this date</Text>
-                    )}
-                  </View>
+              <View style={styles.symptomsContainer}>
+                <Text style={styles.symptomsTitle}>Symptoms</Text>
+                {selectedDateSymptoms.length > 0 ? (
+                  selectedDateSymptoms.map((symptom) => (
+                    <View key={symptom.id} style={styles.symptomItem}>
+                      <Text style={styles.symptomText}>
+                        {symptom.type} {symptom.severity ? `(Severity: ${symptom.severity}/5)` : ''}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.noSymptomsText}>No symptoms logged for this date</Text>
+                )}
+              </View>
             </ScrollView>
             <View style={styles.bottomActionArea}>
               {(isFirstDayOfPeriod && selectedDatePeriod) || canLogPeriod ? (
