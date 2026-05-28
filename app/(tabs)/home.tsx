@@ -1291,9 +1291,9 @@ const styles = StyleSheet.create({
     borderColor: '#FFC9D8',
   },
   ovulationCard: {
-    backgroundColor: '#FFEBD9',
+    backgroundColor: '#E3F1FF',
     borderWidth: 1,
-    borderColor: '#FFD5B2',
+    borderColor: '#B3D4FF',
   },
   fertilityCard: {
     backgroundColor: '#E7ECFF',
