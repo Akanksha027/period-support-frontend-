@@ -38,6 +38,7 @@ import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
 import PeriLoader from '../../components/PeriLoader';
+import { showToast } from '../../components/Toast';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -426,7 +427,7 @@ export default function CalendarScreen() {
       // Invalidate AI predictions cache to trigger background refresh
       await invalidatePredictionsCache();
 
-      Alert.alert('Success', 'Period logged successfully');
+      showToast('Period logged successfully', 'success');
       setShowDatePicker(false);
       setSelectedDate(null);
       loadingDataRef.current = false;
@@ -448,11 +449,11 @@ export default function CalendarScreen() {
             try {
               if (periodId === 'settings-fallback') {
                 await updateSettings({ lastPeriodDate: null });
-                Alert.alert('Success', 'Period removed successfully');
+                showToast('Period removed successfully', 'success');
                 DeviceEventEmitter.emit('settingsUpdated');
               } else {
                 await deletePeriod(periodId);
-                Alert.alert('Success', 'Period deleted successfully');
+                showToast('Period deleted successfully', 'success');
                 DeviceEventEmitter.emit('periodsUpdated');
               }
               setSelectedDate(null);

@@ -54,6 +54,7 @@ import { setClerkTokenGetter } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import PeriLoader from '../../components/PeriLoader';
 import { Video } from 'expo-av';
+import { showToast } from '../../components/Toast';
 
 const { width } = Dimensions.get('window');
 const CIRCLE_RADIUS = 155;
@@ -475,7 +476,7 @@ export default function HomeScreen() {
       const response = await generateReminder();
       if (response.success && response.reminder) {
         setLastReminder(response.reminder);
-        Alert.alert('Reminder Generated', 'Your personalized reminder has been generated!');
+        showToast('Your personalized reminder has been generated!', 'success');
       } else {
         // Show the actual message from the backend
         const errorMessage = response.message || 'Could not generate a reminder at this time. Please try again later.';
@@ -528,7 +529,7 @@ export default function HomeScreen() {
       // Invalidate AI predictions cache to trigger background refresh
       await invalidatePredictionsCache();
 
-      Alert.alert('Success', 'Period logged successfully');
+      showToast('Period logged successfully', 'success');
       loadData();
       DeviceEventEmitter.emit('periodsUpdated');
     } catch (error: any) {

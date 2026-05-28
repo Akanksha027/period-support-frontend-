@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { createSymptom, createMood, getSymptoms, getMoods, Symptom, Mood } from '../lib/api';
 import PeriLoader from '../components/PeriLoader';
+import { showToast } from '../components/Toast';
 
 const MOOD_OPTIONS = [
   { emoji: '😊', label: 'Calm' },
@@ -168,7 +169,7 @@ export default function LogSymptomsScreen() {
       
       // Small delay to allow navigation, then show success
       setTimeout(() => {
-        Alert.alert('Success', 'Your symptoms and moods have been saved!');
+        showToast('Your symptoms and moods have been saved!', 'success');
       }, 300);
     } catch (error: any) {
       console.error('[LogSymptoms] Error saving:', error);

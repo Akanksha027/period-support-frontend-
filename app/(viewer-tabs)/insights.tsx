@@ -42,6 +42,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PHASE_PALETTE, PhaseKey } from '../../constants/phasePalette';
 import PeriLoader from '../../components/PeriLoader';
 import { Video } from 'expo-av';
+import { showToast } from '../../components/Toast';
 
 const formatDisplayName = (value: string) => {
   if (!value) return 'there';
@@ -394,7 +395,7 @@ export default function ViewerInsightsScreen() {
       const response = await generateReminder();
       if (response.success && response.reminder) {
         setLastReminder(response.reminder);
-        Alert.alert('Reminder Generated', 'Reminder has been generated!');
+        showToast('Reminder has been generated!', 'success');
       } else {
         const errorMessage = response.message || 'Could not generate a reminder at this time. Please try again later.';
         Alert.alert('Unable to Generate', errorMessage);
