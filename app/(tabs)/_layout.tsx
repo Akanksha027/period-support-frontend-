@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
 import { usePhase } from '../../contexts/PhaseContext'
 import { PHASE_PALETTE } from '../../constants/phasePalette'
+import { usePushNotifications } from '../../hooks/usePushNotifications'
 
 const { width } = Dimensions.get('window')
 
@@ -99,6 +100,8 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export default function TabsLayout() {
+  usePushNotifications();
+
   return (
     <Tabs
       screenOptions={{
