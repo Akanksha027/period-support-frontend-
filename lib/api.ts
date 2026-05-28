@@ -1,7 +1,14 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
+import { getCachedData, setCachedData, clearCacheByPattern, buildCacheKey, CacheTTL } from './cache';
 
+// Helper to get current cache scope
+function getCacheScope(): string {
+  const mode = currentViewModeRecord?.mode || 'SELF';
+  const email = mode === 'OTHER' ? currentViewModeRecord?.viewedUserEmail : currentViewModeRecord?.email;
+  return `${mode}::${email || 'unknown'}`;
+}
 const extra =
   ((Constants as any)?.expoConfig?.extra as any) ||
   ((Constants as any)?.manifest?.extra as any) ||
@@ -315,7 +322,10 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (__DEV__) {
+    // Don't throw red screens for AI prediction failures, let it silently fallback
+    const isAiPredictionRoute = error?.config?.url?.includes('/api/predictions/ai');
+    
+    if (__DEV__ && !isAiPredictionRoute) {
       console.error('[API Response Error]', {
         status: error?.response?.status,
         statusText: error?.response?.statusText,
@@ -386,9 +396,15 @@ export interface ReminderStatus {
   lastReminder: Reminder | null;
 }
 
-export const getReminderStatus = async (): Promise<ReminderStatus> => {
+export const getReminderStatus = async (forceRefresh = false): Promise<ReminderStatus> => {
+  const key = buildCacheKey(['reminderStatus', getCacheScope()]);
+  if (!forceRefresh) {
+    const cached = await getCachedData<ReminderStatus>(key);
+    if (cached) return cached;
+  }
   try {
     const response = await api.get('/api/reminders/status');
+    await setCachedData(key, response.data, CacheTTL.SHORT);
     return response.data;
   } catch (error: any) {
     if (error.response?.status === 401 || error.response?.status === 404) {
@@ -407,6 +423,7 @@ export interface GenerateReminderResponse {
 export const generateReminder = async (): Promise<GenerateReminderResponse> => {
   try {
     const response = await api.post('/api/reminders/generate');
+    await clearCacheByPattern(`reminderStatus::${getCacheScope()}`);
     return {
       success: response.data.success || false,
       reminder: response.data.reminder || null,
@@ -460,9 +477,16 @@ export interface UserSettings {
 }
 
 // Period API functions
-export const getPeriods = async (): Promise<Period[]> => {
+export const getPeriods = async (forceRefresh = false): Promise<Period[]> => {
+  const key = buildCacheKey(['periods', getCacheScope()]);
+  if (!forceRefresh) {
+    const cached = await getCachedData<Period[]>(key);
+    if (cached) return cached;
+  }
   const response = await api.get('/api/periods');
-  return response.data.periods || [];
+  const data = response.data.periods || [];
+  await setCachedData(key, data, CacheTTL.MEDIUM);
+  return data;
 };
 
 export const createPeriod = async (data: {
@@ -471,6 +495,7 @@ export const createPeriod = async (data: {
   flowLevel?: 'light' | 'medium' | 'heavy' | null;
 }): Promise<Period> => {
   const response = await api.post('/api/periods', data);
+  await clearCacheByPattern(`periods::${getCacheScope()}`);
   return response.data.period || response.data;
 };
 
@@ -480,11 +505,13 @@ export const updatePeriod = async (id: string, data: {
   flowLevel?: 'light' | 'medium' | 'heavy' | null;
 }): Promise<Period> => {
   const response = await api.patch(`/api/periods/${id}`, data);
+  await clearCacheByPattern(`periods::${getCacheScope()}`);
   return response.data.period || response.data;
 };
 
 export const deletePeriod = async (id: string): Promise<void> => {
   await api.delete(`/api/periods/${id}`);
+  await clearCacheByPattern(`periods::${getCacheScope()}`);
 };
 
 // User API functions
@@ -505,10 +532,17 @@ export interface UserInfo {
   settings?: UserSettings | null;
 }
 
-export const getUserInfo = async (): Promise<UserInfo | null> => {
+export const getUserInfo = async (forceRefresh = false): Promise<UserInfo | null> => {
+  const key = buildCacheKey(['user', getCacheScope()]);
+  if (!forceRefresh) {
+    const cached = await getCachedData<UserInfo>(key);
+    if (cached) return cached;
+  }
   try {
     const response = await api.get('/api/user');
-    return response.data.user || null;
+    const data = response.data.user || null;
+    if (data) await setCachedData(key, data, CacheTTL.LONG);
+    return data;
   } catch (error: any) {
     if (error.response?.status === 401 || error.response?.status === 404) {
       return null;
@@ -520,11 +554,14 @@ export const getUserInfo = async (): Promise<UserInfo | null> => {
 export const initializeUser = async (): Promise<UserInfo> => {
   // GET /api/user auto-creates the user if they don't exist on the backend
   const response = await api.get('/api/user');
-  return response.data.user || response.data;
+  const data = response.data.user || response.data;
+  await setCachedData(buildCacheKey(['user', getCacheScope()]), data, CacheTTL.LONG);
+  return data;
 };
 
 export const updateUser = async (name: string): Promise<UserInfo> => {
   const response = await api.patch('/api/user', { name });
+  await clearCacheByPattern(`user::${getCacheScope()}`);
   return response.data.user || response.data;
 };
 
@@ -561,10 +598,17 @@ export const unregisterPushToken = async (expoPushToken: string) => {
 };
 
 // Settings API functions
-export const getSettings = async (): Promise<UserSettings | null> => {
+export const getSettings = async (forceRefresh = false): Promise<UserSettings | null> => {
+  const key = buildCacheKey(['settings', getCacheScope()]);
+  if (!forceRefresh) {
+    const cached = await getCachedData<UserSettings>(key);
+    if (cached) return cached;
+  }
   try {
     const response = await api.get('/api/user/settings');
-    return response.data.settings || null;
+    const data = response.data.settings || null;
+    if (data) await setCachedData(key, data, CacheTTL.MEDIUM);
+    return data;
   } catch (error: any) {
     if (error.response?.status === 401 || error.response?.status === 404) {
       return null;
@@ -584,6 +628,7 @@ export const getAIPredictions = async () => {
 export const updateSettings = async (settings: Partial<UserSettings>): Promise<UserSettings | null> => {
   try {
     const response = await api.patch('/api/user/settings', settings);
+    await clearCacheByPattern(`settings::${getCacheScope()}`);
     return response.data.settings || response.data || null;
   } catch (error) {
     console.error('[API] Failed to update settings', error);
@@ -594,13 +639,20 @@ export const updateSettings = async (settings: Partial<UserSettings>): Promise<U
 
 
 // Symptoms API functions
-export const getSymptoms = async (startDate?: string, endDate?: string): Promise<Symptom[]> => {
+export const getSymptoms = async (startDate?: string, endDate?: string, forceRefresh = false): Promise<Symptom[]> => {
+  const key = buildCacheKey(['symptoms', getCacheScope(), startDate, endDate]);
+  if (!forceRefresh) {
+    const cached = await getCachedData<Symptom[]>(key);
+    if (cached) return cached;
+  }
   const params: any = {};
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
 
   const response = await api.get('/api/symptoms', { params });
-  return response.data.symptoms || [];
+  const data = response.data.symptoms || [];
+  await setCachedData(key, data, CacheTTL.SHORT);
+  return data;
 };
 
 export const createSymptom = async (data: {
@@ -613,21 +665,30 @@ export const createSymptom = async (data: {
     type: data.type,
     severity: data.severity || 3,
   });
+  await clearCacheByPattern(`symptoms::${getCacheScope()}`);
   return response.data.symptom || response.data;
 };
 
 export const deleteSymptom = async (id: string): Promise<void> => {
   await api.delete(`/api/symptoms/${id}`);
+  await clearCacheByPattern(`symptoms::${getCacheScope()}`);
 };
 
 // Moods API functions
-export const getMoods = async (startDate?: string, endDate?: string): Promise<Mood[]> => {
+export const getMoods = async (startDate?: string, endDate?: string, forceRefresh = false): Promise<Mood[]> => {
+  const key = buildCacheKey(['moods', getCacheScope(), startDate, endDate]);
+  if (!forceRefresh) {
+    const cached = await getCachedData<Mood[]>(key);
+    if (cached) return cached;
+  }
   const params: any = {};
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
 
   const response = await api.get('/api/moods', { params });
-  return response.data.moods || [];
+  const data = response.data.moods || [];
+  await setCachedData(key, data, CacheTTL.SHORT);
+  return data;
 };
 
 export const createMood = async (data: {
@@ -638,11 +699,13 @@ export const createMood = async (data: {
     date: data.date,
     type: data.type,
   });
+  await clearCacheByPattern(`moods::${getCacheScope()}`);
   return response.data.mood || response.data;
 };
 
 export const deleteMood = async (id: string): Promise<void> => {
   await api.delete(`/api/moods/${id}`);
+  await clearCacheByPattern(`moods::${getCacheScope()}`);
 };
 
 // Chat API function

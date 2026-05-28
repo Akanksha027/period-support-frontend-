@@ -8,6 +8,7 @@ import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import 'react-native-reanimated';
+import { Toast } from '../components/Toast';
 
 // Complete the web browser session on native
 WebBrowser.maybeCompleteAuthSession();
@@ -75,6 +76,7 @@ export default function RootLayout() {
         <Stack.Screen name="home-for-other" />
         <Stack.Screen name="(viewer-tabs)" options={{ headerShown: false }} />
       </Stack>
+      <Toast />
       <StatusBar style={Platform.OS === 'ios' ? 'dark' : 'auto'} />
     </ClerkProvider>
   );

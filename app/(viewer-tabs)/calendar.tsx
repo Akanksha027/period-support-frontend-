@@ -117,9 +117,10 @@ export default function ViewerCalendarScreen() {
   const [periods, setPeriods] = useState<Period[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [allSymptoms, setAllSymptoms] = useState<Symptom[]>([]);
+  const [allMoods, setAllMoods] = useState<Mood[]>([]);
   const [selectedDateSymptoms, setSelectedDateSymptoms] = useState<Symptom[]>([]);
   const [selectedDateMoods, setSelectedDateMoods] = useState<Mood[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [viewedUserName, setViewedUserName] = useState<string>('');
@@ -224,16 +225,32 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
         }
       }
 
-      const [periodsData, settingsData] = await Promise.all([
-        getPeriods().catch(() => []),
-        getSettings().catch(() => null),
+      const [periodsData, settingsData, symptomsData, moodsData] = await Promise.all([
+        getPeriods().catch((e) => { console.error('periods fetch error', e); return null; }),
+        getSettings().catch((e) => { console.error('settings fetch error', e); return null; }),
+        getSymptoms().catch((e) => { console.error('symptoms fetch error', e); return null; }),
+        getMoods().catch((e) => { console.error('moods fetch error', e); return null; }),
       ]);
-      const effectivePeriods = buildEffectivePeriods(periodsData, settingsData);
-      setPeriods(effectivePeriods);
-      setSettings(settingsData);
-
-      await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
-      await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
+      
+      if (settingsData !== null) {
+        setSettings(settingsData);
+        await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
+      }
+      
+      if (periodsData !== null) {
+        const effectiveSettings = settingsData !== null ? settingsData : (cachedSettings || null);
+        const effectivePeriods = buildEffectivePeriods(periodsData, effectiveSettings);
+        setPeriods(effectivePeriods);
+        await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
+      }
+      
+      if (symptomsData !== null) {
+        setAllSymptoms(symptomsData);
+      }
+      
+      if (moodsData !== null) {
+        setAllMoods(moodsData);
+      }
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Viewer Calendar] Error loading data:', error);
@@ -244,73 +261,28 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
     }
 }, []);
 
-  // Load moods & symptoms for selected date
-  const loadLogsForDate = useCallback(async (date: Date) => {
+  // Load moods & symptoms for selected date synchronously from all pre-fetched logs
+  const loadLogsForDate = useCallback((date: Date) => {
     if (!user) return;
 
-    let showSpinner = true;
-    setLoadingLogs(true);
-    try {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
 
-      const viewModeRecord = getCurrentViewModeRecord();
-      const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
-        ? viewModeRecord?.viewedUserId ?? user.id
-        : user.id;
-      const cacheScope = buildCacheKey([
-        viewModeRecord?.mode ?? 'UNKNOWN',
-        scopeIdentifier ?? 'self',
-      ]);
+    const filteredSymptoms = allSymptoms.filter(s => {
+      const sDate = new Date(s.date);
+      return sDate >= startOfDay && sDate <= endOfDay;
+    });
 
-      const symptomsCacheKey = buildCacheKey([
-        'viewer-calendar-symptoms',
-        cacheScope,
-        startOfDay.toISOString(),
-        endOfDay.toISOString(),
-      ]);
-      const moodsCacheKey = buildCacheKey([
-        'viewer-calendar-moods',
-        cacheScope,
-        startOfDay.toISOString(),
-        endOfDay.toISOString(),
-      ]);
+    const filteredMoods = allMoods.filter(m => {
+      const mDate = new Date(m.date);
+      return mDate >= startOfDay && mDate <= endOfDay;
+    });
 
-      const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
-      if (cachedSymptoms !== undefined) {
-        setSelectedDateSymptoms(cachedSymptoms);
-        showSpinner = false;
-      }
-
-      const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
-      if (cachedMoods !== undefined) {
-        setSelectedDateMoods(cachedMoods);
-        showSpinner = false;
-      }
-
-      if (!showSpinner) {
-        setLoadingLogs(false);
-      }
-
-      const [symptoms, moods] = await Promise.all([
-        getSymptoms(startOfDay.toISOString(), endOfDay.toISOString()).catch(() => []),
-        getMoods(startOfDay.toISOString(), endOfDay.toISOString()).catch(() => []),
-      ]);
-      setSelectedDateSymptoms(symptoms);
-      setSelectedDateMoods(moods);
-
-      await setCachedData(symptomsCacheKey, symptoms, CacheTTL.SHORT);
-      await setCachedData(moodsCacheKey, moods, CacheTTL.SHORT);
-    } catch (error: any) {
-      console.error('[Viewer Calendar] Error loading logs:', error);
-      setSelectedDateSymptoms([]);
-      setSelectedDateMoods([]);
-    } finally {
-      setLoadingLogs(false);
-    }
-  }, [user]);
+    setSelectedDateSymptoms(filteredSymptoms);
+    setSelectedDateMoods(filteredMoods);
+  }, [user, allSymptoms, allMoods]);
 
   useEffect(() => {
     if (user && isSignedIn) {
@@ -514,21 +486,24 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
                 ? `${status.color}${status.isPredicted ? borderPredictedAlpha : borderActualAlpha}`
                 : undefined;
 
+              const todayBorderColor = hasColor ? status.color : Colors.primary;
+
               return (
                 <TouchableOpacity
                   key={date.toISOString()}
                   style={[
                     styles.dayCell,
                     hasColor && { backgroundColor, borderColor },
-                    isToday && styles.todayCell,
+                    isToday && { borderWidth: 2, borderColor: todayBorderColor },
                   ]}
                   onPress={() => handleDatePress(date)}
                 >
                   <Text
                     style={[
                       styles.dayText,
+                      isToday && { fontWeight: '900' },
+                      isToday && !hasColor && { color: Colors.primary },
                       hasColor && !status.isPredicted && styles.dayTextOnPhase,
-                      isToday && styles.todayText,
                     ]}
                   >
                     {date.getDate()}
@@ -637,12 +612,8 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
                     return null;
                   })()}
 
-                  {loadingLogs ? (
-                    <View style={styles.loadingContainer}>
-                  <PeriLoader size={36} />
-                    </View>
-                  ) : (
-                    <>
+                  {/* Moods and Symptoms rendered instantly */}
+                  <>
                       <View style={styles.symptomsSection}>
                         <Text style={styles.sectionTitle}>Moods</Text>
                         {selectedDateMoods.length === 0 ? (
@@ -675,7 +646,6 @@ const loadData = useCallback(async ({ skipSpinner = false }: { skipSpinner?: boo
                         )}
                       </View>
                     </>
-                  )}
                 </>
               )}
             </ScrollView>
@@ -779,10 +749,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     marginBottom: 12,
   },
-  todayCell: {
-    borderWidth: 2,
-    borderColor: Colors.primary,
-  },
   dayText: {
     fontSize: 14,
     color: Colors.text,
@@ -793,7 +759,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   todayText: {
-    fontWeight: '700',
+    fontWeight: '900',
     color: Colors.primary,
   },
   legendRow: {

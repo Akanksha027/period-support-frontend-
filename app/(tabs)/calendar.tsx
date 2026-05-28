@@ -22,6 +22,7 @@ import {
   getSettings,
   createPeriod,
   deletePeriod,
+  updateSettings,
   getSymptoms,
   getMoods,
   Period,
@@ -121,9 +122,10 @@ export default function CalendarScreen() {
   const [periods, setPeriods] = useState<Period[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [allSymptoms, setAllSymptoms] = useState<Symptom[]>([]);
+  const [allMoods, setAllMoods] = useState<Mood[]>([]);
   const [selectedDateSymptoms, setSelectedDateSymptoms] = useState<Symptom[]>([]);
   const [selectedDateMoods, setSelectedDateMoods] = useState<Mood[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newPeriodDate, setNewPeriodDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -206,16 +208,34 @@ export default function CalendarScreen() {
 
       setLoading(showSpinner);
 
-      const [periodsData, settingsData] = await Promise.all([
-        getPeriods().catch(() => []),
-        getSettings().catch(() => null),
+      const [periodsData, settingsData, symptomsData, moodsData] = await Promise.all([
+        getPeriods().catch((e) => { console.error('periods fetch error', e); return null; }),
+        getSettings().catch((e) => { console.error('settings fetch error', e); return null; }),
+        getSymptoms().catch((e) => { console.error('symptoms fetch error', e); return null; }),
+        getMoods().catch((e) => { console.error('moods fetch error', e); return null; }),
       ]);
-      const effectivePeriods = buildEffectivePeriods(periodsData, settingsData);
-      setPeriods(effectivePeriods);
-      setSettings(settingsData);
-
-      await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
-      await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
+      
+      // Only update state if the fetch was successful (not null)
+      if (settingsData !== null) {
+        setSettings(settingsData);
+        await setCachedData(settingsCacheKey, settingsData, CacheTTL.MEDIUM);
+      }
+      
+      if (periodsData !== null) {
+        // Use either the freshly fetched settings or fallback to cached settings
+        const effectiveSettings = settingsData !== null ? settingsData : (cachedSettings || null);
+        const effectivePeriods = buildEffectivePeriods(periodsData, effectiveSettings);
+        setPeriods(effectivePeriods);
+        await setCachedData(periodsCacheKey, effectivePeriods, CacheTTL.MEDIUM);
+      }
+      
+      if (symptomsData !== null) {
+        setAllSymptoms(symptomsData);
+      }
+      
+      if (moodsData !== null) {
+        setAllMoods(moodsData);
+      }
     } catch (error: any) {
       if (error.response?.status !== 401) {
         console.error('[Calendar] Error loading data:', error);
@@ -226,73 +246,28 @@ export default function CalendarScreen() {
     }
   }, [refreshing]);
 
-  // Load moods & symptoms for selected date
-  const loadLogsForDate = useCallback(async (date: Date) => {
+  // Load moods & symptoms for selected date synchronously from all pre-fetched logs
+  const loadLogsForDate = useCallback((date: Date) => {
     if (!user) return;
+    
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
 
-    let showSpinner = true;
-    setLoadingLogs(true);
-    try {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
+    const filteredSymptoms = allSymptoms.filter(s => {
+      const sDate = new Date(s.date);
+      return sDate >= startOfDay && sDate <= endOfDay;
+    });
 
-      const viewModeRecord = getCurrentViewModeRecord();
-      const scopeIdentifier = viewModeRecord?.mode === 'OTHER'
-        ? viewModeRecord?.viewedUserId ?? user.id
-        : user.id;
-      const cacheScope = buildCacheKey([
-        viewModeRecord?.mode ?? 'UNKNOWN',
-        scopeIdentifier ?? 'self',
-      ]);
+    const filteredMoods = allMoods.filter(m => {
+      const mDate = new Date(m.date);
+      return mDate >= startOfDay && mDate <= endOfDay;
+    });
 
-      const symptomsCacheKey = buildCacheKey([
-        'calendar-symptoms',
-        cacheScope,
-        startOfDay.toISOString(),
-        endOfDay.toISOString(),
-      ]);
-      const moodsCacheKey = buildCacheKey([
-        'calendar-moods',
-        cacheScope,
-        startOfDay.toISOString(),
-        endOfDay.toISOString(),
-      ]);
-
-      const cachedSymptoms = await getCachedData<Symptom[]>(symptomsCacheKey);
-      if (cachedSymptoms !== undefined) {
-        setSelectedDateSymptoms(cachedSymptoms);
-        showSpinner = false;
-      }
-
-      const cachedMoods = await getCachedData<Mood[]>(moodsCacheKey);
-      if (cachedMoods !== undefined) {
-        setSelectedDateMoods(cachedMoods);
-        showSpinner = false;
-      }
-
-      if (!showSpinner) {
-        setLoadingLogs(false);
-      }
-
-      const [symptoms, moods] = await Promise.all([
-        getSymptoms(startOfDay.toISOString(), endOfDay.toISOString()).catch(() => []),
-        getMoods(startOfDay.toISOString(), endOfDay.toISOString()).catch(() => []),
-      ]);
-      setSelectedDateSymptoms(symptoms);
-      setSelectedDateMoods(moods);
-
-      await setCachedData(symptomsCacheKey, symptoms, CacheTTL.SHORT);
-      await setCachedData(moodsCacheKey, moods, CacheTTL.SHORT);
-    } catch (error: any) {
-      console.error('[Calendar] Error loading logs:', error);
-      setSelectedDateSymptoms([]);
-      setSelectedDateMoods([]);
-    } finally {
-      setLoadingLogs(false);
-    }
-  }, [user]);
+    setSelectedDateSymptoms(filteredSymptoms);
+    setSelectedDateMoods(filteredMoods);
+  }, [user, allSymptoms, allMoods]);
 
   useEffect(() => {
     if (user && isSignedIn) {
@@ -471,12 +446,18 @@ export default function CalendarScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deletePeriod(periodId);
-              Alert.alert('Success', 'Period deleted successfully');
+              if (periodId === 'settings-fallback') {
+                await updateSettings({ lastPeriodDate: null });
+                Alert.alert('Success', 'Period removed successfully');
+                DeviceEventEmitter.emit('settingsUpdated');
+              } else {
+                await deletePeriod(periodId);
+                Alert.alert('Success', 'Period deleted successfully');
+                DeviceEventEmitter.emit('periodsUpdated');
+              }
               setSelectedDate(null);
               loadingDataRef.current = false;
               loadData();
-              DeviceEventEmitter.emit('periodsUpdated');
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to delete period');
             }
@@ -644,20 +625,23 @@ export default function CalendarScreen() {
                 ? `${baseColor}${finalBorderAlpha}`
                 : undefined;
 
+              const todayBorderColor = hasColor ? baseColor : Colors.primary;
+
               return (
                 <TouchableOpacity
                   key={date.toISOString()}
                   style={[
                     styles.dayCell,
-                    isToday && styles.todayCell,
                     hasColor && { backgroundColor, borderColor },
+                    isToday && { borderWidth: 2, borderColor: todayBorderColor },
                   ]}
                   onPress={() => handleDatePress(date)}
                 >
                   <Text
                     style={[
                       styles.dayText,
-                      isToday && styles.todayText,
+                      isToday && { fontWeight: '900' },
+                      isToday && !hasColor && { color: Colors.primary },
                       hasColor && !status.isPredicted && styles.dayTextOnPhase,
                     ]}
                   >
@@ -772,13 +756,8 @@ export default function CalendarScreen() {
                 </View>
               )}
 
-              {loadingLogs ? (
-                <View style={styles.loadingContainer}>
-                  <PeriLoader size={36} />
-                </View>
-              ) : (
-                <>
-                  <View style={styles.moodsContainer}>
+              {/* Moods and Symptoms rendered instantly */}
+              <View style={styles.moodsContainer}>
                     <Text style={styles.moodsTitle}>Moods</Text>
                     {selectedDateMoods.length > 0 ? (
                       selectedDateMoods.map((mood) => (
@@ -805,8 +784,6 @@ export default function CalendarScreen() {
                       <Text style={styles.noSymptomsText}>No symptoms logged for this date</Text>
                     )}
                   </View>
-                </>
-              )}
             </ScrollView>
             <View style={styles.bottomActionArea}>
               {(isFirstDayOfPeriod && selectedDatePeriod) || canLogPeriod ? (
@@ -986,10 +963,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     marginBottom: 12,
   },
-  todayCell: {
-    borderColor: Colors.primary,
-    borderWidth: 2,
-  },
   dayText: {
     fontSize: 14,
     color: Colors.text,
@@ -1000,7 +973,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   todayText: {
-    fontWeight: '700',
+    fontWeight: '900',
     color: Colors.primary,
   },
   legendRow: {

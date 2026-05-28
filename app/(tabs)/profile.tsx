@@ -9,6 +9,8 @@ import { getSettings, updateSettings, UserSettings, setViewMode } from '../../li
 import { setClerkTokenGetter } from '../../lib/api';
 import { clearStoredPushToken } from '../../lib/notifications';
 import PeriLoader from '../../components/PeriLoader';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { showToast } from '../../components/Toast';
 
 export default function Profile() {
   const { signOut, getToken } = useAuth();
@@ -18,6 +20,8 @@ export default function Profile() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [cycleLength, setCycleLength] = useState<string>('');
   const [periodLength, setPeriodLength] = useState<string>('');
+  const [lastPeriodDate, setLastPeriodDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Set up token getter
@@ -49,6 +53,7 @@ export default function Profile() {
         setSettings(data);
         setCycleLength(String(data.averageCycleLength || 28));
         setPeriodLength(String(data.averagePeriodLength || 5));
+        setLastPeriodDate(data.lastPeriodDate ? new Date(data.lastPeriodDate) : null);
       } else {
         setSettings(null);
         setCycleLength('28');
@@ -85,7 +90,7 @@ export default function Profile() {
         setSettings(updated);
         // Emit event to refresh other pages
         DeviceEventEmitter.emit('settingsUpdated');
-        Alert.alert('Success', 'Cycle length updated successfully!');
+        showToast('Cycle length updated successfully!');
       }
     } catch (error: any) {
       console.error('Error updating cycle length:', error);
@@ -118,7 +123,7 @@ export default function Profile() {
         setSettings(updated);
         // Emit event to refresh other pages
         DeviceEventEmitter.emit('settingsUpdated');
-        Alert.alert('Success', 'Period length updated successfully!');
+        showToast('Period length updated successfully!');
       }
     } catch (error: any) {
       console.error('Error updating period length:', error);
@@ -128,6 +133,28 @@ export default function Profile() {
       setIsUpdating(false);
     }
   }, [periodLength, settings]);
+
+  const handleUpdateLastPeriodDate = useCallback(async (event: any, date?: Date) => {
+    setShowDatePicker(false);
+    if (!date) return;
+    
+    setLastPeriodDate(date);
+    setIsUpdating(true);
+    
+    try {
+      const updated = await updateSettings({ lastPeriodDate: date.toISOString() });
+      if (updated) {
+        setSettings(updated);
+        DeviceEventEmitter.emit('settingsUpdated');
+        showToast('Last period date updated successfully!');
+      }
+    } catch (error: any) {
+      console.error('Error updating last period date:', error);
+      showToast(error.message || 'Failed to update date.', 'error');
+    } finally {
+      setIsUpdating(false);
+    }
+  }, []);
 
   const handleSignOut = useCallback(async () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -219,6 +246,38 @@ export default function Profile() {
               <Text style={styles.inputSuffix}>days</Text>
             </View>
           </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingLabelContainer}>
+              <Text style={styles.settingLabel}>Last Period Date</Text>
+              <Text style={styles.settingHint}>Start of your last period</Text>
+            </View>
+            <TouchableOpacity 
+              style={[styles.inputContainer, styles.dateInputContainer]} 
+              onPress={() => setShowDatePicker(true)}
+              disabled={isUpdating || loading}
+            >
+              <Text style={[
+                styles.settingInput, 
+                !lastPeriodDate && { color: Colors.textSecondary, fontWeight: '400', fontSize: 14 }
+              ]}>
+                {lastPeriodDate 
+                  ? lastPeriodDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
+                  : 'No date logged'}
+              </Text>
+              <Ionicons name="calendar-outline" size={16} color={Colors.primary} style={{ marginLeft: 8 }} />
+            </TouchableOpacity>
+          </View>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={lastPeriodDate || new Date()}
+              mode="date"
+              display="default"
+              maximumDate={new Date()}
+              onChange={handleUpdateLastPeriodDate}
+            />
+          )}
 
           {isUpdating && (
             <View style={styles.updatingIndicator}>
@@ -314,6 +373,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  dateInputContainer: {
+    justifyContent: 'flex-end',
+    minWidth: 140,
   },
   settingInput: {
     fontSize: 16,

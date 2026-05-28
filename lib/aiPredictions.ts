@@ -172,7 +172,7 @@ async function fetchAIPredictions(): Promise<AIResponse | null> {
         console.warn('[AI Predictions] Backend returned no predictions');
         return null;
     } catch (error) {
-        console.error('[AI Predictions] Error fetching AI predictions:', error);
+        console.warn('[AI Predictions] Error fetching AI predictions (falling back to static):', error);
         return null;
     }
 }
@@ -246,7 +246,7 @@ export function useAIPredictions(
                 setIsUsingAI(false);
             }
         } catch (error) {
-            console.error('[AI Predictions] Error loading predictions:', error);
+            console.warn('[AI Predictions] Error loading predictions (falling back to static):', error);
             setIsUsingAI(false);
         } finally {
             setLoading(false);

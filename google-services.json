@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "114833305201",
+    "project_id": "periodtrackerapp-36294",
+    "storage_bucket": "periodtrackerapp-36294.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:114833305201:android:f9dffa619f142b5632f5d0",
+        "android_client_info": {
+          "package_name": "com.akanksha.periodsupport"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9oBPzu9CQHGwzXOl7DpfdAjv4B3Vow4M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
